@@ -206,6 +206,8 @@ func main() {
 			CacheDisabled:        !common.GetBoolConfigWithDefault("CacheEnabled", true),
 			DefaultWorkspace:     pvcSpec,
 			MLPipelineTLSEnabled: tlsCfg != nil,
+			DefaultRunAsUser:     parseOptionalInt64(common.GetDefaultSecurityContextRunAsUser()),
+			DefaultRunAsGroup:    parseOptionalInt64(common.GetDefaultSecurityContextRunAsGroup()),
 		},
 	)
 	err = config.LoadSamples(resourceManager, *sampleConfigPath)
@@ -512,6 +514,19 @@ func initConfig() {
 	})
 
 	proxy.InitializeConfigWithEnv()
+}
+
+// parseOptionalInt64 parses a string to *int64. Returns nil if the string is empty.
+func parseOptionalInt64(s string) *int64 {
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		glog.Errorf("Failed to parse %q as int64: %v", s, err)
+		return nil
+	}
+	return &v
 }
 
 // getPVCSpec retrieves the default workspace PersistentVolumeClaimSpec from the config.
