@@ -31,6 +31,7 @@ import (
 	swapi "github.com/kubeflow/pipelines/backend/src/crd/pkg/apis/scheduledworkflow/v1beta1"
 	"github.com/pkg/errors"
 	"github.com/robfig/cron"
+	status "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -1620,7 +1621,7 @@ func toModelTask(t interface{}) (*model.Task, error) {
 		return &model.Task{}, nil
 	}
 	var taskId, nodeId, namespace, pipelineName, runId, mlmdExecId, fingerprint string
-	var name, parentTaskId, state, inputs, outputs string
+	var name, parentTaskId, state, statusMessage, inputs, outputs string
 	var createTime, startTime, finishTime int64
 	var stateHistory []*model.RuntimeStatus
 	var children []string
@@ -1655,6 +1656,7 @@ func toModelTask(t interface{}) (*model.Task, error) {
 		name = apiTaskDetailV2.GetDisplayName()
 		parentTaskId = apiTaskDetailV2.GetParentTaskId()
 		state = apiTaskDetailV2.GetState().String()
+		statusMessage = apiTaskDetailV2.GetError().GetMessage()
 		if hist, err := toModelRuntimeStatuses(apiTaskDetailV2.GetStateHistory()); err == nil {
 			stateHistory = hist
 		}
@@ -1681,6 +1683,7 @@ func toModelTask(t interface{}) (*model.Task, error) {
 		createTime = wfStatus.CreateTime
 		finishTime = wfStatus.FinishTime
 		children = wfStatus.Children
+		statusMessage = wfStatus.Message
 	default:
 		return nil, util.NewUnknownApiVersionError("Task", t)
 	}
@@ -1698,6 +1701,7 @@ func toModelTask(t interface{}) (*model.Task, error) {
 		Name:              name,
 		ParentTaskId:      parentTaskId,
 		State:             model.RuntimeState(state).ToV2(),
+		StatusMessage:     statusMessage,
 		StateHistory:      stateHistory,
 		MLMDInputs:        model.LargeText(inputs),
 		MLMDOutputs:       model.LargeText(outputs),
@@ -1804,6 +1808,10 @@ func toApiPipelineTaskDetail(t *model.Task) *apiv2beta1.PipelineTaskDetail {
 			ChildTask: &apiv2beta1.PipelineTaskDetail_ChildTask_PodName{PodName: c},
 		})
 	}
+	var taskError *status.Status
+	if t.StatusMessage != "" {
+		taskError = util.ToRpcStatus(fmt.Errorf("%s", t.StatusMessage))
+	}
 	return &apiv2beta1.PipelineTaskDetail{
 		RunId:        t.RunID,
 		TaskId:       t.UUID,
@@ -1817,7 +1825,9 @@ func toApiPipelineTaskDetail(t *model.Task) *apiv2beta1.PipelineTaskDetail {
 		Outputs:      outputArtifacts,
 		ParentTaskId: t.ParentTaskId,
 		StateHistory: toApiRuntimeStatuses(t.StateHistory),
+		PodName:      t.PodName,
 		ChildTasks:   children,
+		Error:        taskError,
 	}
 }
 

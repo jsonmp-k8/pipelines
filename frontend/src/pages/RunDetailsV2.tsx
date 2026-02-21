@@ -17,7 +17,12 @@ import { MouseEvent as ReactMouseEvent, useEffect, useState } from 'react';
 import { FlowElement } from 'react-flow-renderer';
 import { useQuery } from 'react-query';
 import { V2beta1Experiment } from 'src/apisv2beta1/experiment';
-import { V2beta1Run, V2beta1RuntimeState, V2beta1RunStorageState } from 'src/apisv2beta1/run';
+import {
+  V2beta1PipelineTaskDetail,
+  V2beta1Run,
+  V2beta1RuntimeState,
+  V2beta1RunStorageState,
+} from 'src/apisv2beta1/run';
 import MD2Tabs from 'src/atoms/MD2Tabs';
 import DetailsTable from 'src/components/DetailsTable';
 import { FlowElementDataBase } from 'src/components/graph/Constants';
@@ -213,6 +218,7 @@ export function RunDetailsV2(props: RunDetailsV2Props) {
                   element={selectedNode}
                   elementMlmdInfo={selectedNodeMlmdInfo}
                   namespace={namespace}
+                  taskDetails={run?.run_details?.task_details}
                 ></RuntimeNodeDetailsV2>
               </SidePanel>
             </div>

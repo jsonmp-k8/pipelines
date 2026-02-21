@@ -42,6 +42,7 @@ var taskColumns = []string{
 	"Name",
 	"ParentTaskUUID",
 	"State",
+	"StatusMessage",
 	"StateHistory",
 	"MLMDInputs",
 	"MLMDOutputs",
@@ -129,6 +130,7 @@ func (s *TaskStore) CreateTask(task *model.Task) (*model.Task, error) {
 				"Name":              newTask.Name,
 				"ParentTaskUUID":    newTask.ParentTaskId,
 				"State":             newTask.State.ToString(),
+				"StatusMessage":     newTask.StatusMessage,
 				"StateHistory":      stateHistoryString,
 				"MLMDInputs":        newTask.MLMDInputs,
 				"MLMDOutputs":       newTask.MLMDOutputs,
@@ -153,7 +155,7 @@ func (s *TaskStore) scanRows(rows *sql.Rows) ([]*model.Task, error) {
 	var tasks []*model.Task
 	for rows.Next() {
 		var uuid, namespace, pipelineName, runUUID, podName, mlmdExecutionID, fingerprint string
-		var name, parentTaskId, state, stateHistory, inputs, outputs, children sql.NullString
+		var name, parentTaskId, state, statusMessage, stateHistory, inputs, outputs, children sql.NullString
 		var createdTimestamp, startedTimestamp, finishedTimestamp sql.NullInt64
 		err := rows.Scan(
 			&uuid,
@@ -169,6 +171,7 @@ func (s *TaskStore) scanRows(rows *sql.Rows) ([]*model.Task, error) {
 			&name,
 			&parentTaskId,
 			&state,
+			&statusMessage,
 			&stateHistory,
 			&inputs,
 			&outputs,
@@ -199,6 +202,7 @@ func (s *TaskStore) scanRows(rows *sql.Rows) ([]*model.Task, error) {
 			Fingerprint:       fingerprint,
 			Name:              name.String,
 			ParentTaskId:      parentTaskId.String,
+			StatusMessage:     statusMessage.String,
 			StateHistory:      stateHistoryNew,
 			MLMDInputs:        model.LargeText(inputs.String),
 			MLMDOutputs:       model.LargeText(outputs.String),
@@ -393,6 +397,7 @@ func (s *TaskStore) CreateOrUpdateTasks(tasks []*model.Task, runID string) ([]*m
 				t.Name,
 				t.ParentTaskId,
 				t.State.ToString(),
+				t.StatusMessage,
 				stateHistoryString,
 				t.MLMDInputs,
 				t.MLMDOutputs,
@@ -477,6 +482,9 @@ func patchTask(original *model.Task, patch *model.Task) {
 	}
 	if original.State.ToV2() == model.RuntimeStateUnspecified {
 		original.State = patch.State.ToV2()
+	}
+	if original.StatusMessage == "" {
+		original.StatusMessage = patch.StatusMessage
 	}
 	if original.MLMDInputs == "" {
 		original.MLMDInputs = patch.MLMDInputs

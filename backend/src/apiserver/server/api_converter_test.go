@@ -15,6 +15,7 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -3234,6 +3235,29 @@ func Test_toModelTask(t *testing.T) {
 			"",
 		},
 		{
+			"argo node status with error message",
+			util.NodeStatus{
+				ID:          "2",
+				DisplayName: "node_2",
+				State:       "Failed",
+				StartTime:   10,
+				CreateTime:  10,
+				FinishTime:  20,
+				Message:     "ImagePullBackOff: Back-off pulling image",
+			},
+			&model.Task{
+				PodName:           "2",
+				CreatedTimestamp:  10,
+				StartedTimestamp:  10,
+				FinishedTimestamp: 20,
+				Name:              "node_2",
+				State:             model.RuntimeStateFailed,
+				StatusMessage:     "ImagePullBackOff: Back-off pulling image",
+			},
+			false,
+			"",
+		},
+		{
 			"invalid type",
 			apiv2beta1.Run{},
 			nil,
@@ -3610,6 +3634,34 @@ func Test_toApiPipelineTaskDetail(t *testing.T) {
 						ChildTask: &apiv2beta1.PipelineTaskDetail_ChildTask_PodName{PodName: "10"},
 					},
 				},
+			},
+			false,
+			"",
+		},
+		{
+			"v2 spec with status message",
+			&model.Task{
+				UUID:              "1",
+				RunID:             "2",
+				PodName:           "pod-abc-123",
+				MLMDExecutionID:   "3",
+				CreatedTimestamp:  4,
+				StartedTimestamp:  4,
+				FinishedTimestamp: 5,
+				State:             model.RuntimeStateFailed,
+				StatusMessage:     "ImagePullBackOff: Back-off pulling image",
+			},
+			&apiv2beta1.PipelineTaskDetail{
+				RunId:       "2",
+				TaskId:      "1",
+				DisplayName: "",
+				CreateTime:  &timestamppb.Timestamp{Seconds: 4},
+				StartTime:   &timestamppb.Timestamp{Seconds: 4},
+				EndTime:     &timestamppb.Timestamp{Seconds: 5},
+				State:       apiv2beta1.RuntimeState_FAILED,
+				ExecutionId: 3,
+				PodName:     "pod-abc-123",
+				Error:       util.ToRpcStatus(fmt.Errorf("ImagePullBackOff: Back-off pulling image")),
 			},
 			false,
 			"",

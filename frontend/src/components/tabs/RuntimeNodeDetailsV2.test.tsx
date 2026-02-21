@@ -16,6 +16,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { V2beta1PipelineTaskDetail } from 'src/apisv2beta1/run';
 import { Apis } from 'src/lib/Apis';
 import * as mlmdUtils from 'src/mlmd/MlmdUtils';
 import { testBestPractices } from 'src/TestUtils';
@@ -205,5 +206,81 @@ describe('RuntimeNodeDetailsV2', () => {
 
     screen.getByText('/data');
     screen.getByText('createpvc');
+  });
+
+  it('displays error banner when task detail has error message', async () => {
+    const taskDetails: V2beta1PipelineTaskDetail[] = [
+      {
+        pod_name: TEST_POD_NAME,
+        error: {
+          message: 'ImagePullBackOff: Back-off pulling image "invalid-image:latest"',
+          code: 2,
+        },
+      },
+    ];
+    render(
+      <CommonTestWrapper>
+        <RuntimeNodeDetailsV2
+          layers={['root']}
+          onLayerChange={layers => {}}
+          runId={TEST_RUN_ID}
+          element={{
+            data: {
+              label: 'preprocess',
+            },
+            id: 'task.preprocess',
+            position: { x: 100, y: 100 },
+            type: 'EXECUTION',
+          }}
+          elementMlmdInfo={TSET_MLMD_INFO}
+          namespace={undefined}
+          taskDetails={taskDetails}
+        ></RuntimeNodeDetailsV2>
+      </CommonTestWrapper>,
+    );
+
+    // Error banner should be visible
+    screen.getByText('ImagePullBackOff: Back-off pulling image "invalid-image:latest"');
+  });
+
+  it('displays pod name and error in task details tab', async () => {
+    const taskDetails: V2beta1PipelineTaskDetail[] = [
+      {
+        pod_name: TEST_POD_NAME,
+        error: {
+          message: 'OOMKilled',
+          code: 2,
+        },
+      },
+    ];
+    render(
+      <CommonTestWrapper>
+        <RuntimeNodeDetailsV2
+          layers={['root']}
+          onLayerChange={layers => {}}
+          runId={TEST_RUN_ID}
+          element={{
+            data: {
+              label: 'preprocess',
+            },
+            id: 'task.preprocess',
+            position: { x: 100, y: 100 },
+            type: 'EXECUTION',
+          }}
+          elementMlmdInfo={TSET_MLMD_INFO}
+          namespace={undefined}
+          taskDetails={taskDetails}
+        ></RuntimeNodeDetailsV2>
+      </CommonTestWrapper>,
+    );
+
+    const detailsTab = await screen.findByText('Task Details');
+    fireEvent.click(detailsTab); // Switch details tab
+
+    screen.getByText('Pod Name');
+    screen.getByText(TEST_POD_NAME);
+    // "OOMKilled" appears both in the error Banner and in the Task Details table
+    const errorTexts = screen.getAllByText('OOMKilled');
+    expect(errorTexts.length).toBeGreaterThanOrEqual(2);
   });
 });

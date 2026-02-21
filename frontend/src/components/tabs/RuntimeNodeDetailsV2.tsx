@@ -57,6 +57,7 @@ import InputOutputTab, {
   ParamList,
 } from 'src/components/tabs/InputOutputTab';
 import { convertYamlToPlatformSpec, convertYamlToV2PipelineSpec } from 'src/lib/v2/WorkflowUtils';
+import { V2beta1PipelineTaskDetail } from 'src/apisv2beta1/run';
 import { PlatformDeploymentConfig } from 'src/generated/pipeline_spec/pipeline_spec';
 import { getComponentSpec } from 'src/lib/v2/NodeUtils';
 
@@ -89,6 +90,7 @@ interface RuntimeNodeDetailsV2Props {
   element?: FlowElement<FlowElementDataBase> | null;
   elementMlmdInfo?: NodeMlmdInfo | null;
   namespace: string | undefined;
+  taskDetails?: V2beta1PipelineTaskDetail[];
 }
 
 export function RuntimeNodeDetailsV2({
@@ -99,6 +101,7 @@ export function RuntimeNodeDetailsV2({
   element,
   elementMlmdInfo,
   namespace,
+  taskDetails,
 }: RuntimeNodeDetailsV2Props) {
   if (!element) {
     return NODE_INFO_UNKNOWN;
@@ -114,6 +117,7 @@ export function RuntimeNodeDetailsV2({
           execution={elementMlmdInfo?.execution}
           layers={layers}
           namespace={namespace}
+          taskDetails={taskDetails}
         ></TaskNodeDetail>
       );
     } else if (NodeTypeNames.ARTIFACT === element.type) {
@@ -146,6 +150,7 @@ interface TaskNodeDetailProps {
   execution?: Execution;
   layers: string[];
   namespace: string | undefined;
+  taskDetails?: V2beta1PipelineTaskDetail[];
 }
 
 function TaskNodeDetail({
@@ -155,6 +160,7 @@ function TaskNodeDetail({
   execution,
   layers,
   namespace,
+  taskDetails,
 }: TaskNodeDetailProps) {
   const { data: logsInfo } = useQuery<Map<string, string>, Error>(
     ['execution_logs', { executionId: execution?.getId(), namespace }],
@@ -171,10 +177,21 @@ function TaskNodeDetail({
   const logsBannerMessage = logsInfo?.get(LOGS_BANNER_MESSAGE);
   const logsBannerAdditionalInfo = logsInfo?.get(LOGS_BANNER_ADDITIONAL_INFO);
 
+  // Match selected node to its task detail by pod name from MLMD execution
+  const podName = execution
+    ?.getCustomPropertiesMap()
+    .get('pod_name')
+    ?.getStringValue();
+  const matchedTaskDetail = taskDetails?.find(td => td.pod_name === podName);
+  const taskErrorMessage = matchedTaskDetail?.error?.message;
+
   const [selectedTab, setSelectedTab] = useState(0);
 
   return (
     <div className={commonCss.page}>
+      {taskErrorMessage && (
+        <Banner message={taskErrorMessage} mode='error' />
+      )}
       <MD2Tabs
         tabs={['Input/Output', 'Task Details', 'Logs']}
         selectedTab={selectedTab}
@@ -193,7 +210,10 @@ function TaskNodeDetail({
         {/* Task Details tab */}
         {selectedTab === 1 && (
           <div className={padding(20)}>
-            <DetailsTable title='Task Details' fields={getTaskDetailsFields(element, execution)} />
+            <DetailsTable
+              title='Task Details'
+              fields={getTaskDetailsFields(element, execution, matchedTaskDetail)}
+            />
             <DetailsTable
               title='Volume Mounts'
               fields={getNodeVolumeMounts(layers, pipelineJobString, element)}
@@ -223,6 +243,7 @@ function TaskNodeDetail({
 function getTaskDetailsFields(
   element?: FlowElement<FlowElementDataBase> | null,
   execution?: Execution,
+  taskDetail?: V2beta1PipelineTaskDetail,
 ): Array<KeyValue<string>> {
   const details: Array<KeyValue<string>> = [];
   if (element) {
@@ -260,6 +281,14 @@ function getTaskDetailsFields(
         finishedAt = new Date(lastUpdatedTime).toString();
       }
       details.push(['Finished At', finishedAt]);
+    }
+    if (taskDetail) {
+      if (taskDetail.pod_name) {
+        details.push(['Pod Name', taskDetail.pod_name]);
+      }
+      if (taskDetail.error?.message) {
+        details.push(['Error', taskDetail.error.message]);
+      }
     }
   }
 

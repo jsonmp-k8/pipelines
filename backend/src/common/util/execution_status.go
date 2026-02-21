@@ -30,6 +30,7 @@ type NodeStatus struct {
 	CreateTime  int64
 	FinishTime  int64
 	Children    []string
+	Message     string
 }
 
 // Abstract interface to encapsulate the resources of the execution runtime specifically

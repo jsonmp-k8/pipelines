@@ -37,6 +37,7 @@ type Task struct {
 	Name               string           `gorm:"column:Name; default:null"`
 	ParentTaskId       string           `gorm:"column:ParentTaskUUID; default:null"`
 	State              RuntimeState     `gorm:"column:State; default:null;"`
+	StatusMessage      string           `gorm:"column:StatusMessage; default:null;"`
 	StateHistoryString LargeText        `gorm:"column:StateHistory; default:null;"`
 	MLMDInputs         LargeText        `gorm:"column:MLMDInputs; default:null;"`
 	MLMDOutputs        LargeText        `gorm:"column:MLMDOutputs; default:null;"`
@@ -94,6 +95,7 @@ var taskAPIToModelFieldMap = map[string]string{
 	"end_time":        "FinishedTimestamp", // v2beta1 API
 	"fingerprint":     "Fingerprint",
 	"state":           "State",             // v2beta1 API
+	"status_message":  "StatusMessage",     // v2beta1 API
 	"state_history":   "StateHistory",      // v2beta1 API
 	"parent_task_id":  "ParentTaskUUID",    // v2beta1 API
 	"mlmdExecutionID": "MLMDExecutionID",   // v1beta1 API
@@ -130,6 +132,8 @@ func (t Task) GetFieldValue(name string) interface{} {
 		return t.ParentTaskId
 	case "State":
 		return t.State
+	case "StatusMessage":
+		return t.StatusMessage
 	case "Name":
 		return t.Name
 	case "MLMDInputs":
