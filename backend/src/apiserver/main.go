@@ -38,6 +38,13 @@ import (
 	apiv1beta1 "github.com/kubeflow/pipelines/backend/api/v1beta1/go_client"
 	apiv2beta1 "github.com/kubeflow/pipelines/backend/api/v2beta1/go_client"
 	cm "github.com/kubeflow/pipelines/backend/src/apiserver/client_manager"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai"
+	aicontext "github.com/kubeflow/pipelines/backend/src/apiserver/ai/context"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/provider"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/rules"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/session"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools/builtin"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/config"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/config/proxy"
@@ -237,6 +244,40 @@ func reconcileSwfCrs(resourceManager *resource.ResourceManager, ctx context.Cont
 	}
 }
 
+func initAIServer(resourceManager *resource.ResourceManager) *ai.AIServer {
+	apiKey := common.GetAIAPIKey()
+	if apiKey == "" {
+		glog.Warning("AI_API_KEY not set, AI assistant will not be available")
+		return nil
+	}
+
+	chatModel, err := provider.NewChatModel(
+		common.GetAIProvider(),
+		apiKey,
+		common.GetAIModel(),
+		common.GetAIMaxTokens(),
+	)
+	if err != nil {
+		glog.Errorf("Failed to create AI chat model: %v", err)
+		return nil
+	}
+
+	toolRegistry := tools.NewToolRegistry()
+	builtin.RegisterAll(toolRegistry, resourceManager)
+
+	sessionManager := session.NewSessionManager()
+	contextBuilder := aicontext.NewContextBuilder(resourceManager)
+
+	ruleManager := rules.NewRuleManager()
+	if rulesPath := common.GetAIRulesPath(); rulesPath != "" {
+		if err := ruleManager.LoadRules(rulesPath); err != nil {
+			glog.Warningf("Failed to load AI rules from %s: %v", rulesPath, err)
+		}
+	}
+
+	return ai.NewAIServer(chatModel, toolRegistry, sessionManager, contextBuilder, ruleManager)
+}
+
 // A custom http request header matcher to pass on the user identity
 // Reference: https://github.com/grpc-ecosystem/grpc-gateway/blob/v1.16.0/docs/_docs/customizingyourgateway.md#mapping-from-http-request-headers-to-grpc-client-metadata
 func grpcCustomMatcher(key string) (string, bool) {
@@ -388,6 +429,19 @@ func startHTTPProxy(resourceManager *resource.ResourceManager, usePipelinesKuber
 	runArtifactServer := server.NewRunArtifactServer(resourceManager)
 	topMux.HandleFunc("/apis/v1beta1/runs/{run_id}/nodes/{node_id}/artifacts/{artifact_name}:read", runArtifactServer.ReadArtifactV1).Methods(http.MethodGet)
 	topMux.HandleFunc("/apis/v2beta1/runs/{run_id}/nodes/{node_id}/artifacts/{artifact_name}:read", runArtifactServer.ReadArtifact).Methods(http.MethodGet)
+
+	// AI assistant endpoints (registered before the catch-all PathPrefix)
+	if common.IsAIEnabled() {
+		aiServer := initAIServer(resourceManager)
+		if aiServer != nil {
+			topMux.HandleFunc("/apis/v2beta1/ai/chat/stream", ai.NewSSEHandler(aiServer)).Methods(http.MethodPost)
+			topMux.HandleFunc("/apis/v2beta1/ai/approve", ai.NewApproveHandler(aiServer)).Methods(http.MethodPost)
+			topMux.HandleFunc("/apis/v2beta1/ai/generate-docs", ai.NewGenerateDocsHandler(aiServer)).Methods(http.MethodPost)
+			topMux.HandleFunc("/apis/v2beta1/ai/rules", ai.NewListRulesHandler(aiServer)).Methods(http.MethodGet)
+			topMux.HandleFunc("/apis/v2beta1/ai/rules/{rule_id}:toggle", ai.NewToggleRuleHandler(aiServer)).Methods(http.MethodPost)
+			glog.Info("AI assistant endpoints registered")
+		}
+	}
 
 	topMux.PathPrefix("/apis/").Handler(runtimeMux)
 

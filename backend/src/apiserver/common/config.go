@@ -41,6 +41,14 @@ const (
 	MLPipelineServiceName                   string = "ML_PIPELINE_SERVICE_NAME"
 	MetadataServiceName                     string = "METADATA_SERVICE_NAME"
 	ClusterDomain                           string = "CLUSTER_DOMAIN"
+
+	// AI configuration
+	AIEnabled   string = "AI_ENABLED"
+	AIProvider  string = "AI_PROVIDER"
+	AIModel     string = "AI_MODEL"
+	AIMaxTokens string = "AI_MAX_TOKENS"
+	AIAPIKey    string = "AI_API_KEY"
+	AIRulesPath string = "AI_RULES_PATH"
 )
 
 func IsPipelineVersionUpdatedByDefault() bool {
@@ -171,4 +179,28 @@ func GetCaBundleConfigMapName() string {
 
 func GetCompiledPipelineSpecPatch() string {
 	return GetStringConfigWithDefault(CompiledPipelineSpecPatch, "{}")
+}
+
+func IsAIEnabled() bool {
+	return GetBoolConfigWithDefault(AIEnabled, false)
+}
+
+func GetAIProvider() string {
+	return GetStringConfigWithDefault(AIProvider, "anthropic")
+}
+
+func GetAIModel() string {
+	return GetStringConfigWithDefault(AIModel, "claude-sonnet-4-20250514")
+}
+
+func GetAIMaxTokens() int {
+	return GetIntConfigWithDefault(AIMaxTokens, 4096)
+}
+
+func GetAIAPIKey() string {
+	return GetStringConfigWithDefault(AIAPIKey, "")
+}
+
+func GetAIRulesPath() string {
+	return GetStringConfigWithDefault(AIRulesPath, "")
 }

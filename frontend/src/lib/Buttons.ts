@@ -20,6 +20,7 @@ import ExpandIcon from '@material-ui/icons/UnfoldMore';
 import { QUERY_PARAMS, RoutePage } from 'src/components/Router';
 import { ToolbarActionMap } from 'src/components/Toolbar';
 import { PageProps } from 'src/pages/Page';
+import { openAIPanel } from 'src/components/ai/aiPanelOpener';
 import { Apis } from './Apis';
 import { URLParser } from './URLParser';
 import { errorToMessage, s } from './Utils';
@@ -44,6 +45,8 @@ export enum ButtonKeys {
   RESTORE = 'restore',
   TERMINATE_RUN = 'terminateRun',
   UPLOAD_PIPELINE = 'uploadPipeline',
+  AI_ANALYZE = 'aiAnalyze',
+  AI_GENERATE_DOCS = 'aiGenerateDocs',
 }
 
 export default class Buttons {
@@ -400,6 +403,38 @@ export default class Buttons {
       style: { minWidth: 160 },
       title: 'Upload pipeline',
       tooltip: 'Upload pipeline',
+    };
+    return this;
+  }
+
+  public aiAnalyze(getRunId: () => string, prompt?: string): Buttons {
+    this._map[ButtonKeys.AI_ANALYZE] = {
+      action: () => {
+        const runId = getRunId();
+        openAIPanel(
+          prompt || 'Analyze why this run failed and suggest fixes.',
+          { page_type: 'run_details', run_id: runId },
+        );
+      },
+      id: 'aiAnalyzeBtn',
+      title: 'Analyze with AI',
+      tooltip: 'Open AI assistant to analyze this run',
+    };
+    return this;
+  }
+
+  public aiGenerateDocs(getPipelineId: () => string): Buttons {
+    this._map[ButtonKeys.AI_GENERATE_DOCS] = {
+      action: () => {
+        const pipelineId = getPipelineId();
+        openAIPanel(
+          'Generate documentation for this pipeline.',
+          { page_type: 'pipeline_details', pipeline_id: pipelineId },
+        );
+      },
+      id: 'aiGenerateDocsBtn',
+      title: 'AI Docs',
+      tooltip: 'Generate documentation with AI assistant',
     };
     return this;
   }

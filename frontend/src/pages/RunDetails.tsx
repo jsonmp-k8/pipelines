@@ -231,6 +231,9 @@ class RunDetails extends Page<RunDetailsInternalProps, RunDetailsState> {
           true,
           () => this.refresh(),
         )
+        .aiAnalyze(
+          () => this.state.runMetadata?.id || runIdFromParams || '',
+        )
         .getToolbarActionMap(),
       breadcrumbs: [{ displayName: 'Experiments', href: RoutePage.EXPERIMENTS }],
       pageTitle: this.props.runId!,

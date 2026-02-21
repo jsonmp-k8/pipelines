@@ -107,3 +107,15 @@ data:
   ## - A negative integer (e.g., -1) disables automatic deletion, meaning artifacts are retained indefinitely.  
   ## Note: The unit of this configuration is always in days.  
   ARTIFACT_RETENTION_DAYS: "-1"
+  ## AI Assistant configuration
+  ## AI_ENABLED: Controls whether the AI assistant feature is available.
+  ## Valid values are 'true' and 'false'. Defaults to 'false'.
+  AI_ENABLED: "false"
+  ## AI_PROVIDER: The AI provider to use (e.g., 'anthropic').
+  AI_PROVIDER: ""
+  ## AI_MODEL: The AI model to use (e.g., 'claude-sonnet-4-20250514').
+  AI_MODEL: ""
+  ## AI_MAX_TOKENS: Maximum tokens for AI responses. Defaults to 4096.
+  AI_MAX_TOKENS: "4096"
+  ## AI_RULES_PATH: Path to directory containing AI rules (.md files).
+  AI_RULES_PATH: ""

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-install-config
+  namespace: kubeflow
+data:
+  AI_ENABLED: "true"
+  AI_PROVIDER: "anthropic"
+  AI_MODEL: "claude-sonnet-4-20250514"
+  AI_MAX_TOKENS: "4096"
+  AI_RULES_PATH: ""

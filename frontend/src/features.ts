@@ -10,6 +10,7 @@ export enum FeatureKey {
   FUNCTIONAL_COMPONENT = 'functional_component',
   // We plan to refactor the class component to functional component.
   // To avoid breacking current behavior, enable this feature to do the bugbash / validation test for functional components.
+  AI_ASSISTANT = 'ai_assistant',
 }
 
 const FEATURE_V2 = {
@@ -30,7 +31,13 @@ const FEATURE_FUNCTIONAL_COMPONENT = {
   active: false,
 };
 
-const features: Feature[] = [FEATURE_V2, FEATURE_V2_ALPHA, FEATURE_FUNCTIONAL_COMPONENT];
+const FEATURE_AI_ASSISTANT = {
+  name: FeatureKey.AI_ASSISTANT,
+  description: 'Enable AI assistant panel for pipeline analysis and management.',
+  active: false,
+};
+
+const features: Feature[] = [FEATURE_V2, FEATURE_V2_ALPHA, FEATURE_FUNCTIONAL_COMPONENT, FEATURE_AI_ASSISTANT];
 
 declare global {
   var __FEATURE_FLAGS__: string;

@@ -52,6 +52,11 @@ import RecurringRunDetailsRouter from 'src/pages/RecurringRunDetailsRouter';
 import SideNavigation from './SideNav';
 import Toolbar, { ToolbarProps } from './Toolbar';
 import { BuildInfoContext } from 'src/lib/BuildInfo';
+import AIAssistantPanel from './ai/AIAssistantPanel';
+import AIAssistantContext from './ai/AIAssistantContext';
+import { registerAIPanelOpener, unregisterAIPanelOpener } from './ai/aiPanelOpener';
+import { isFeatureEnabled, FeatureKey } from '../features';
+import { PageContext } from './ai/aiTypes';
 
 export type RouteConfig = {
   path: string;
@@ -399,13 +404,43 @@ class RoutedPage extends React.Component<{ route?: RouteConfig }, RouteComponent
 
 export default Router;
 
-const SideNavLayout: React.FC<{}> = ({ children }) => (
-  <div className={classes(commonCss.page)}>
-    <div className={classes(commonCss.flexGrow)}>
-      <Route
-        render={({ ...props }) => <SideNavigation page={props.location.pathname} {...props} />}
-      />
-      {children}
-    </div>
-  </div>
-);
+const SideNavLayout: React.FC<{}> = ({ children }) => {
+  const [aiPanelOpen, setAiPanelOpen] = React.useState(false);
+  const [aiInitialPrompt, setAiInitialPrompt] = React.useState<string | undefined>(undefined);
+  const [aiPageContext, setAiPageContext] = React.useState<PageContext | undefined>(undefined);
+
+  const openPanel = React.useCallback((prompt?: string, pageContext?: PageContext) => {
+    setAiInitialPrompt(prompt);
+    setAiPageContext(pageContext);
+    setAiPanelOpen(true);
+  }, []);
+
+  // Register the opener for non-React code (e.g., Buttons.ts)
+  React.useEffect(() => {
+    registerAIPanelOpener(openPanel);
+    return () => unregisterAIPanelOpener();
+  }, [openPanel]);
+
+  const aiEnabled = isFeatureEnabled(FeatureKey.AI_ASSISTANT);
+
+  return (
+    <AIAssistantContext.Provider value={{ openPanel }}>
+      <div className={classes(commonCss.page)}>
+        <div className={classes(commonCss.flexGrow)}>
+          <Route
+            render={({ ...props }) => <SideNavigation page={props.location.pathname} {...props} />}
+          />
+          {children}
+          {aiEnabled && (
+            <AIAssistantPanel
+              isOpen={aiPanelOpen}
+              onClose={() => setAiPanelOpen(false)}
+              initialPrompt={aiInitialPrompt}
+              pageContext={aiPageContext}
+            />
+          )}
+        </div>
+      </div>
+    </AIAssistantContext.Provider>
+  );
+};

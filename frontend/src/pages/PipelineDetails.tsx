@@ -162,6 +162,9 @@ class PipelineDetails extends Page<{}, PipelineDetailsState> {
               : new Map<string, string>(),
           this._deleteCallback.bind(this),
           pipelineVersionIdFromParams ? true : false /* useCurrentResource */,
+        )
+        .aiGenerateDocs(
+          () => pipelineIdFromParams || '',
         );
       return {
         actions: buttons.getToolbarActionMap(),

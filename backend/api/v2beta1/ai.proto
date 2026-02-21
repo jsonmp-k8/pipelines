@@ -1,0 +1,378 @@
+// Copyright 2024 The Kubeflow Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+option go_package = "github.com/kubeflow/pipelines/backend/api/v2beta1/go_client";
+package kubeflow.pipelines.backend.api.v2beta1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  schemes: [1, 2], // http + https
+  responses: {
+    key: "default";
+    value: {
+      schema: {
+        json_schema: {
+          ref: ".google.rpc.Status";
+        }
+      }
+    }
+  }
+  security_definitions: {
+    security: {
+      key: "Bearer";
+      value: {
+        type: TYPE_API_KEY;
+        in: IN_HEADER;
+        name: "authorization";
+      }
+    }
+  }
+  security: {
+    security_requirement: {
+      key: "Bearer";
+      value: {};
+    }
+  }
+};
+
+// AIService provides AI-powered assistant capabilities for Kubeflow Pipelines.
+service AIService {
+  // Chat sends a message and streams back an agentic AI response.
+  rpc Chat(ChatRequest) returns (stream ChatResponse) {
+    option (google.api.http) = {
+      post: "/apis/v2beta1/ai/chat"
+      body: "*"
+    };
+  }
+
+  // ApproveToolCall approves or denies a pending tool call in agent mode.
+  rpc ApproveToolCall(ApproveToolCallRequest) returns (ApproveToolCallResponse) {
+    option (google.api.http) = {
+      post: "/apis/v2beta1/ai/approve"
+      body: "*"
+    };
+  }
+
+  // GeneratePipeline generates a pipeline spec from a natural language description.
+  rpc GeneratePipeline(GeneratePipelineRequest) returns (GeneratePipelineResponse) {
+    option (google.api.http) = {
+      post: "/apis/v2beta1/ai/generate-pipeline"
+      body: "*"
+    };
+  }
+
+  // GenerateDocumentation generates documentation for a pipeline.
+  rpc GenerateDocumentation(GenerateDocumentationRequest) returns (GenerateDocumentationResponse) {
+    option (google.api.http) = {
+      post: "/apis/v2beta1/ai/generate-docs"
+      body: "*"
+    };
+  }
+
+  // ListMCPServers lists configured MCP servers.
+  rpc ListMCPServers(ListMCPServersRequest) returns (ListMCPServersResponse) {
+    option (google.api.http) = {
+      get: "/apis/v2beta1/ai/mcp-servers"
+    };
+  }
+
+  // ListRules lists available AI rules.
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse) {
+    option (google.api.http) = {
+      get: "/apis/v2beta1/ai/rules"
+    };
+  }
+
+  // ToggleRule enables or disables an AI rule.
+  rpc ToggleRule(ToggleRuleRequest) returns (ToggleRuleResponse) {
+    option (google.api.http) = {
+      post: "/apis/v2beta1/ai/rules/{rule_id}:toggle"
+      body: "*"
+    };
+  }
+}
+
+// ChatMode defines the interaction mode for the AI assistant.
+enum ChatMode {
+  // Default unspecified mode.
+  CHAT_MODE_UNSPECIFIED = 0;
+  // Ask mode: read-only queries, no mutating operations.
+  ASK = 1;
+  // Agent mode: can perform mutating operations with user confirmation.
+  AGENT = 2;
+}
+
+// PageContext provides context about the current UI page.
+message PageContext {
+  // The type of page (e.g., "run_details", "pipeline_details", "run_list").
+  string page_type = 1;
+  // The run ID if on a run details page.
+  string run_id = 2;
+  // The pipeline ID if on a pipeline details page.
+  string pipeline_id = 3;
+  // The pipeline version ID if applicable.
+  string pipeline_version_id = 4;
+  // The experiment ID if applicable.
+  string experiment_id = 5;
+  // The namespace context.
+  string namespace = 6;
+}
+
+// ChatRequest is the request message for Chat RPC.
+message ChatRequest {
+  // The user's message.
+  string message = 1;
+  // The session ID for conversation continuity.
+  string session_id = 2;
+  // The chat mode (Ask or Agent).
+  ChatMode mode = 3;
+  // Context about the current UI page.
+  PageContext page_context = 4;
+}
+
+// ChatResponse is a streaming response message from the AI assistant.
+message ChatResponse {
+  oneof event {
+    // A chunk of markdown text.
+    MarkdownChunk markdown_chunk = 1;
+    // A tool call event (tool being invoked).
+    ToolCallEvent tool_call = 2;
+    // A tool result event (tool execution completed).
+    ToolResultEvent tool_result = 3;
+    // A confirmation request for a mutating tool call.
+    ConfirmationRequest confirmation_request = 4;
+    // A progress event.
+    ProgressEvent progress = 5;
+    // An action button the user can click.
+    ActionButton action_button = 6;
+    // An anchor link to navigate to.
+    AnchorLink anchor_link = 7;
+    // A code block with syntax highlighting.
+    CodeBlock code_block = 8;
+    // An error event.
+    ErrorEvent error = 9;
+    // Session metadata (sent as first message).
+    SessionMetadata session_metadata = 10;
+  }
+}
+
+// MarkdownChunk is a chunk of streaming markdown text.
+message MarkdownChunk {
+  // The markdown content.
+  string content = 1;
+}
+
+// ToolCallEvent represents an AI tool being invoked.
+message ToolCallEvent {
+  // Unique ID for this tool call.
+  string tool_call_id = 1;
+  // The name of the tool being called.
+  string tool_name = 2;
+  // The input arguments as JSON.
+  string arguments_json = 3;
+  // Whether the tool is read-only (informational).
+  bool read_only = 4;
+}
+
+// ToolResultEvent represents the result of a tool execution.
+message ToolResultEvent {
+  // The tool call ID this result corresponds to.
+  string tool_call_id = 1;
+  // The result content as JSON.
+  string result_json = 2;
+  // Whether the tool execution was successful.
+  bool success = 3;
+  // Error message if the tool failed.
+  string error = 4;
+}
+
+// ConfirmationRequest asks the user to approve a mutating tool call.
+message ConfirmationRequest {
+  // The tool call ID requiring confirmation.
+  string tool_call_id = 1;
+  // The tool name.
+  string tool_name = 2;
+  // Human-readable description of what the tool will do.
+  string description = 3;
+  // The input arguments as JSON.
+  string arguments_json = 4;
+}
+
+// ProgressEvent indicates the AI is working on something.
+message ProgressEvent {
+  // A brief status message.
+  string message = 1;
+  // Progress percentage (0-100), -1 if indeterminate.
+  int32 percentage = 2;
+}
+
+// ActionButton is a clickable action in the AI response.
+message ActionButton {
+  // Display label for the button.
+  string label = 1;
+  // Action type (e.g., "navigate", "create_run", "retry").
+  string action = 2;
+  // Action payload as JSON.
+  string payload_json = 3;
+}
+
+// AnchorLink is a navigable link in the AI response.
+message AnchorLink {
+  // Display text.
+  string text = 1;
+  // The URL or route path.
+  string href = 2;
+}
+
+// CodeBlock is a syntax-highlighted code block.
+message CodeBlock {
+  // The programming language.
+  string language = 1;
+  // The code content.
+  string code = 2;
+  // Optional filename.
+  string filename = 3;
+}
+
+// ErrorEvent represents an error during AI processing.
+message ErrorEvent {
+  // Error message.
+  string message = 1;
+  // Error code.
+  string code = 2;
+  // Whether the error is retryable.
+  bool retryable = 3;
+}
+
+// SessionMetadata is sent as the first message in a chat stream.
+message SessionMetadata {
+  // The session ID.
+  string session_id = 1;
+  // The AI model being used.
+  string model = 2;
+  // Available tools for this session.
+  repeated string available_tools = 3;
+}
+
+// ApproveToolCallRequest approves or denies a pending tool call.
+message ApproveToolCallRequest {
+  // The session ID.
+  string session_id = 1;
+  // The tool call ID to approve or deny.
+  string tool_call_id = 2;
+  // Whether to approve (true) or deny (false).
+  bool approved = 3;
+}
+
+// ApproveToolCallResponse is the response after approving/denying a tool call.
+message ApproveToolCallResponse {
+  // Whether the approval was processed successfully.
+  bool success = 1;
+}
+
+// GeneratePipelineRequest requests pipeline generation from natural language.
+message GeneratePipelineRequest {
+  // Natural language description of the desired pipeline.
+  string description = 1;
+  // Target SDK (e.g., "kfp-v2").
+  string target_sdk = 2;
+}
+
+// GeneratePipelineResponse contains the generated pipeline.
+message GeneratePipelineResponse {
+  // Generated pipeline spec as JSON.
+  string pipeline_spec_json = 1;
+  // Generated Python code for the pipeline.
+  string python_code = 2;
+  // Explanation of the generated pipeline.
+  string explanation = 3;
+}
+
+// GenerateDocumentationRequest requests documentation generation.
+message GenerateDocumentationRequest {
+  // The pipeline ID to generate docs for.
+  string pipeline_id = 1;
+  // The pipeline version ID.
+  string pipeline_version_id = 2;
+}
+
+// GenerateDocumentationResponse contains generated documentation.
+message GenerateDocumentationResponse {
+  // Generated documentation in markdown format.
+  string documentation_markdown = 1;
+}
+
+// ListMCPServersRequest lists configured MCP servers.
+message ListMCPServersRequest {}
+
+// MCPServer represents a configured MCP server.
+message MCPServer {
+  // Server name.
+  string name = 1;
+  // Server URL.
+  string url = 2;
+  // Server status.
+  string status = 3;
+  // Available tools from this server.
+  repeated string tools = 4;
+}
+
+// ListMCPServersResponse contains the list of MCP servers.
+message ListMCPServersResponse {
+  // List of MCP servers.
+  repeated MCPServer servers = 1;
+}
+
+// Rule represents an AI behavior rule.
+message Rule {
+  // Unique rule ID.
+  string rule_id = 1;
+  // Rule name.
+  string name = 2;
+  // Rule description.
+  string description = 3;
+  // Whether the rule is currently enabled.
+  bool enabled = 4;
+  // The rule content in markdown.
+  string content = 5;
+}
+
+// ListRulesRequest lists available rules.
+message ListRulesRequest {}
+
+// ListRulesResponse contains the list of rules.
+message ListRulesResponse {
+  // List of rules.
+  repeated Rule rules = 1;
+}
+
+// ToggleRuleRequest enables or disables a rule.
+message ToggleRuleRequest {
+  // The rule ID.
+  string rule_id = 1;
+  // Whether to enable (true) or disable (false).
+  bool enabled = 2;
+}
+
+// ToggleRuleResponse is the response after toggling a rule.
+message ToggleRuleResponse {
+  // The updated rule.
+  Rule rule = 1;
+}
