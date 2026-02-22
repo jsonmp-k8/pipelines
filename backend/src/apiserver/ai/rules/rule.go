@@ -110,14 +110,15 @@ func (rm *RuleManager) LoadRules(dirPath string) error {
 	return nil
 }
 
-// ListRules returns all rules.
+// ListRules returns copies of all rules.
 func (rm *RuleManager) ListRules() []*Rule {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
 	result := make([]*Rule, 0, len(rm.rules))
 	for _, r := range rm.rules {
-		result = append(result, r)
+		copy := *r
+		result = append(result, &copy)
 	}
 	return result
 }

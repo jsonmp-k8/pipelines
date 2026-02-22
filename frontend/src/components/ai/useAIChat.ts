@@ -27,6 +27,7 @@ import {
 } from './aiTypes';
 
 const messageCounterRef = { current: 0 };
+const MAX_MESSAGES = 200;
 
 function generateMessageId(): string {
   return `msg-${Date.now()}-${++messageCounterRef.current}`;
@@ -181,7 +182,10 @@ export function useAIChat(): UseAIChatReturn {
         content: text,
         timestamp: new Date(),
       };
-      setMessages(prev => [...prev, userMessage]);
+      setMessages(prev => {
+        const updated = [...prev, userMessage];
+        return updated.length > MAX_MESSAGES ? updated.slice(-MAX_MESSAGES) : updated;
+      });
 
       // Create assistant message placeholder
       const assistantMessageId = generateMessageId();

@@ -65,22 +65,36 @@ func (t *ListRunsTool) Execute(ctx context.Context, args map[string]interface{})
 	if ps, ok := args["page_size"].(float64); ok && ps > 0 {
 		pageSize = int(ps)
 	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	ns, _ := args["namespace"].(string)
+	expID, _ := args["experiment_id"].(string)
+
+	// In multi-user mode, require namespace or experiment_id to prevent cross-tenant data leakage
+	if common.IsMultiUserMode() && ns == "" && expID == "" {
+		return &tools.ToolResult{
+			Content: "namespace or experiment_id is required in multi-user mode",
+			IsError: true,
+		}, nil
+	}
 
 	filterContext := &model.FilterContext{}
-	if ns, ok := args["namespace"].(string); ok && ns != "" {
+	if ns != "" {
 		filterContext.ReferenceKey = &model.ReferenceKey{Type: model.NamespaceResourceType, ID: ns}
 	}
-	if expID, ok := args["experiment_id"].(string); ok && expID != "" {
+	if expID != "" {
 		filterContext.ReferenceKey = &model.ReferenceKey{Type: model.ExperimentResourceType, ID: expID}
 	}
 
 	// Authorization checks
-	if ns, ok := args["namespace"].(string); ok && ns != "" {
+	if ns != "" {
 		if err := checkAccess(ctx, t.resourceManager, ns, common.RbacResourceVerbList, common.RbacResourceTypeRuns); err != nil {
 			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 		}
 	}
-	if expID, ok := args["experiment_id"].(string); ok && expID != "" {
+	if expID != "" {
 		if err := checkExperimentAccess(ctx, t.resourceManager, expID, common.RbacResourceVerbList); err != nil {
 			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 		}

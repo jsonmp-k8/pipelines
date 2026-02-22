@@ -22,8 +22,17 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
+)
+
+const (
+	// mcpClientTimeout is the HTTP timeout for MCP client requests.
+	mcpClientTimeout = 30 * time.Second
+
+	// mcpMaxResponseSize limits MCP response bodies to 10MB.
+	mcpMaxResponseSize = 10 << 20
 )
 
 // MCPToolDefinition represents a tool discovered from an MCP server.
@@ -57,7 +66,7 @@ type MCPClient struct {
 func NewMCPClient(url string) *MCPClient {
 	return &MCPClient{
 		url:    url,
-		client: &http.Client{},
+		client: &http.Client{Timeout: mcpClientTimeout},
 	}
 }
 
@@ -112,7 +121,7 @@ func (c *MCPClient) CallTool(ctx context.Context, name string, args map[string]i
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, mcpMaxResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -168,7 +177,7 @@ func (c *MCPClient) discoverTools(ctx context.Context) ([]MCPToolDefinition, err
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, mcpMaxResponseSize))
 	if err != nil {
 		return nil, err
 	}

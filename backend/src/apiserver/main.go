@@ -265,7 +265,7 @@ func initAIServer(resourceManager *resource.ResourceManager) *ai.AIServer {
 	toolRegistry := tools.NewToolRegistry()
 	builtin.RegisterAll(toolRegistry, resourceManager)
 
-	sessionManager := session.NewSessionManager()
+	sessionManager := session.NewSessionManager(context.Background())
 	contextBuilder := aicontext.NewContextBuilder(resourceManager)
 
 	ruleManager := rules.NewRuleManager()

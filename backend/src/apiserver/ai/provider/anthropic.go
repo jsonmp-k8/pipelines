@@ -9,8 +9,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
+)
+
+const (
+	// anthropicHTTPTimeout is the HTTP timeout for Anthropic API requests.
+	// Set long enough for streaming responses.
+	anthropicHTTPTimeout = 5 * time.Minute
 )
 
 const (
@@ -36,7 +43,7 @@ func NewAnthropicProvider(apiKey, model string, maxTokens int) *AnthropicProvide
 		apiKey:    apiKey,
 		model:     model,
 		maxTokens: maxTokens,
-		client:    &http.Client{},
+		client:    &http.Client{Timeout: anthropicHTTPTimeout},
 	}
 }
 
@@ -113,8 +120,9 @@ func (p *AnthropicProvider) StreamChat(ctx context.Context, messages []Message, 
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			errCh <- fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			glog.Errorf("Anthropic API error (status %d): %s", resp.StatusCode, string(body))
+			errCh <- fmt.Errorf("AI provider returned status %d", resp.StatusCode)
 			return
 		}
 

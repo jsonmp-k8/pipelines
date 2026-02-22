@@ -83,7 +83,8 @@ func NewAIServer(
 // the LLM produces a final text response.
 func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent func(ChatResponseEvent)) error {
 	mode := tools.ChatMode(req.Mode)
-	if mode == 0 {
+	// Validate mode: only Ask and Agent are valid. Default unknown values to Ask (safe).
+	if mode != tools.ChatModeAsk && mode != tools.ChatModeAgent {
 		mode = tools.ChatModeAsk
 	}
 
@@ -101,10 +102,12 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 	rulesContent := s.ruleManager.GetActiveRulesContent()
 	systemPrompt := s.contextBuilder.BuildSystemPrompt(req.PageContext, rulesContent)
 
-	s.sessionManager.AddMessage(sess.ID, provider.Message{
+	if err := s.sessionManager.AddMessage(sess.ID, provider.Message{
 		Role:    "user",
 		Content: req.Message,
-	})
+	}); err != nil {
+		glog.Warningf("Failed to add user message to session %s: %v", sess.ID, err)
+	}
 
 	toolDefs := s.toolRegistry.ListForMode(mode)
 
@@ -117,7 +120,13 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 			},
 		})
 
-		eventCh, errCh := s.chatModel.StreamChat(ctx, sess.Messages, toolDefs, systemPrompt)
+		// Take a snapshot of messages to avoid data races with concurrent appends.
+		messages, err := s.sessionManager.GetMessages(sess.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get messages: %w", err)
+		}
+
+		eventCh, errCh := s.chatModel.StreamChat(ctx, messages, toolDefs, systemPrompt)
 
 		var textContent strings.Builder
 		var currentToolCall *provider.ContentBlock
@@ -209,10 +218,12 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 		// After eventCh is closed, the provider goroutine is done.
 		// Do a blocking read on errCh to catch any error that was sent.
 		if err := <-errCh; err != nil {
+			// Log full error server-side; send sanitized message to client.
+			glog.Errorf("AI provider error: %v", err)
 			sendEvent(ChatResponseEvent{
 				Type: "error",
 				Data: map[string]interface{}{
-					"message":   fmt.Sprintf("AI provider error: %v", err),
+					"message":   "An error occurred communicating with the AI provider. Please try again.",
 					"code":      "provider_error",
 					"retryable": true,
 				},
@@ -231,10 +242,12 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 		contentBlocks = append(contentBlocks, toolCalls...)
 
 		if len(contentBlocks) > 0 {
-			s.sessionManager.AddMessage(sess.ID, provider.Message{
+			if err := s.sessionManager.AddMessage(sess.ID, provider.Message{
 				Role:    "assistant",
 				Content: contentBlocks,
-			})
+			}); err != nil {
+				glog.Warningf("Failed to add assistant message to session %s: %v", sess.ID, err)
+			}
 		}
 
 		if stopReason != "tool_use" || len(toolCalls) == 0 {
@@ -262,10 +275,12 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 			}
 		}
 
-		s.sessionManager.AddMessage(sess.ID, provider.Message{
+		if err := s.sessionManager.AddMessage(sess.ID, provider.Message{
 			Role:    "user",
 			Content: toolResults,
-		})
+		}); err != nil {
+			glog.Warningf("Failed to add tool results to session %s: %v", sess.ID, err)
+		}
 	}
 
 	return nil
@@ -337,7 +352,7 @@ func (s *AIServer) executeToolCall(
 		}
 	}
 
-	// Execute the tool
+	// Execute the tool with mode enforcement (defense-in-depth)
 	args, ok := tc.Input.(map[string]interface{})
 	if !ok {
 		args = map[string]interface{}{}
@@ -351,7 +366,7 @@ func (s *AIServer) executeToolCall(
 		},
 	})
 
-	result, err := securedTool.Execute(ctx, args)
+	result, err := securedTool.Execute(ctx, mode, args)
 	if err != nil {
 		result = &tools.ToolResult{
 			Content: fmt.Sprintf("Tool execution error: %v", err),

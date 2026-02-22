@@ -15,6 +15,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -30,7 +31,7 @@ import (
 // newMinimalAIServer creates an AIServer with no chat model for handler tests
 // that do not invoke StreamChat.
 func newMinimalAIServer() *AIServer {
-	sm := session.NewSessionManager()
+	sm := session.NewSessionManager(context.Background())
 	rm := rules.NewRuleManager()
 	cb := aicontext.NewContextBuilder(nil)
 	reg := tools.NewToolRegistry()
@@ -135,7 +136,7 @@ func TestGenerateSessionID(t *testing.T) {
 }
 
 func TestListRulesHandler(t *testing.T) {
-	sm := session.NewSessionManager()
+	sm := session.NewSessionManager(context.Background())
 	rm := rules.NewRuleManager()
 	cb := aicontext.NewContextBuilder(nil)
 	reg := tools.NewToolRegistry()

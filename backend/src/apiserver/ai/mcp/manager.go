@@ -18,6 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -41,6 +43,7 @@ type MCPServerStatus struct {
 // mcpToolAdapter wraps an MCP tool to implement the tools.Tool interface.
 type mcpToolAdapter struct {
 	name        string
+	remoteName  string // The original tool name on the MCP server
 	description string
 	schema      map[string]interface{}
 	client      *MCPClient
@@ -52,7 +55,8 @@ func (t *mcpToolAdapter) InputSchema() map[string]interface{}  { return t.schema
 func (t *mcpToolAdapter) IsReadOnly() bool                     { return false } // All external MCP tools require confirmation
 
 func (t *mcpToolAdapter) Execute(ctx context.Context, args map[string]interface{}) (*tools.ToolResult, error) {
-	result, err := t.client.CallTool(ctx, t.name, args)
+	// Use remoteName (original tool name) when calling the MCP server
+	result, err := t.client.CallTool(ctx, t.remoteName, args)
 	if err != nil {
 		return &tools.ToolResult{Content: fmt.Sprintf("MCP tool error: %v", err), IsError: true}, nil
 	}
@@ -65,6 +69,29 @@ func (t *mcpToolAdapter) Execute(ctx context.Context, args map[string]interface{
 	}
 
 	return &tools.ToolResult{Content: content, IsError: result.IsError}, nil
+}
+
+// validateMCPServerURL validates that the URL is safe to connect to (SSRF prevention).
+func validateMCPServerURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported scheme %q: only http and https are allowed", scheme)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return fmt.Errorf("empty hostname")
+	}
+	// Block common internal/loopback addresses
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		host == "0.0.0.0" || strings.HasPrefix(host, "169.254.") ||
+		host == "metadata.google.internal" {
+		return fmt.Errorf("connecting to %s is not allowed", host)
+	}
+	return nil
 }
 
 // MCPManager manages lifecycle of MCP client/server connections.
@@ -109,6 +136,11 @@ func (m *MCPManager) ConnectAll(ctx context.Context) {
 	defer m.mu.Unlock()
 
 	for _, cfg := range m.configs {
+		if err := validateMCPServerURL(cfg.URL); err != nil {
+			glog.Warningf("Skipping MCP server %s: invalid URL %s: %v", cfg.Name, cfg.URL, err)
+			continue
+		}
+
 		client := NewMCPClient(cfg.URL)
 		if err := client.Connect(ctx); err != nil {
 			glog.Warningf("Failed to connect to MCP server %s at %s: %v", cfg.Name, cfg.URL, err)
@@ -121,6 +153,7 @@ func (m *MCPManager) ConnectAll(ctx context.Context) {
 		for _, toolDef := range client.ListTools() {
 			adapter := &mcpToolAdapter{
 				name:        fmt.Sprintf("mcp_%s_%s", cfg.Name, toolDef.Name),
+				remoteName:  toolDef.Name,
 				description: fmt.Sprintf("[MCP:%s] %s", cfg.Name, toolDef.Description),
 				schema:      toolDef.InputSchema,
 				client:      client,

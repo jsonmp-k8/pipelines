@@ -61,14 +61,27 @@ func (t *ListExperimentsTool) Execute(ctx context.Context, args map[string]inter
 	if ps, ok := args["page_size"].(float64); ok && ps > 0 {
 		pageSize = int(ps)
 	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	ns, _ := args["namespace"].(string)
+
+	// In multi-user mode, require namespace to prevent cross-tenant data leakage
+	if common.IsMultiUserMode() && ns == "" {
+		return &tools.ToolResult{
+			Content: "namespace is required in multi-user mode",
+			IsError: true,
+		}, nil
+	}
 
 	filterContext := &model.FilterContext{}
-	if ns, ok := args["namespace"].(string); ok && ns != "" {
+	if ns != "" {
 		filterContext.ReferenceKey = &model.ReferenceKey{Type: model.NamespaceResourceType, ID: ns}
 	}
 
 	// Authorization check
-	if ns, ok := args["namespace"].(string); ok && ns != "" {
+	if ns != "" {
 		if err := checkAccess(ctx, t.resourceManager, ns, common.RbacResourceVerbList, common.RbacResourceTypeExperiments); err != nil {
 			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 		}

@@ -214,7 +214,7 @@ func TestSecuredToolExecuteDelegatesToInner(t *testing.T) {
 	st := NewSecuredTool(inner)
 
 	args := map[string]interface{}{"id": "abc123"}
-	result, err := st.Execute(context.Background(), args)
+	result, err := st.Execute(context.Background(), ChatModeAsk, args)
 	if err != nil {
 		t.Fatalf("expected no error from Execute, got %v", err)
 	}
@@ -240,7 +240,7 @@ func TestSecuredToolExecuteReturnsError(t *testing.T) {
 	}
 	st := NewSecuredTool(inner)
 
-	result, err := st.Execute(context.Background(), nil)
+	result, err := st.Execute(context.Background(), ChatModeAgent, map[string]interface{}{})
 	if err != expectedErr {
 		t.Fatalf("expected error %v, got %v", expectedErr, err)
 	}

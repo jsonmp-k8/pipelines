@@ -255,8 +255,8 @@ func TestStreamChat_APIError(t *testing.T) {
 	if !strings.Contains(err.Error(), "400") {
 		t.Errorf("error should contain status code 400, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid_request_error") {
-		t.Errorf("error should contain error body, got: %v", err)
+	if !strings.Contains(err.Error(), "status 400") {
+		t.Errorf("error should contain sanitized status, got: %v", err)
 	}
 }
 

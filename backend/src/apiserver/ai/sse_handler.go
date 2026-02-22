@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -32,7 +33,67 @@ import (
 const (
 	// maxRequestBodySize limits request body to 1MB to prevent DoS.
 	maxRequestBodySize = 1 << 20
+
+	// rateLimitWindow is the time window for rate limiting.
+	rateLimitWindow = time.Minute
+
+	// rateLimitMaxRequests is the maximum number of requests per user per window.
+	rateLimitMaxRequests = 20
 )
+
+// rateLimiter provides per-user rate limiting for AI endpoints.
+type rateLimiter struct {
+	mu       sync.Mutex
+	requests map[string][]time.Time
+}
+
+func newRateLimiter() *rateLimiter {
+	return &rateLimiter{
+		requests: make(map[string][]time.Time),
+	}
+}
+
+// allow checks if a request is allowed for the given user key.
+func (rl *rateLimiter) allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-rateLimitWindow)
+
+	// Remove old entries
+	entries := rl.requests[key]
+	start := 0
+	for start < len(entries) && entries[start].Before(cutoff) {
+		start++
+	}
+	entries = entries[start:]
+
+	if len(entries) >= rateLimitMaxRequests {
+		rl.requests[key] = entries
+		return false
+	}
+
+	rl.requests[key] = append(entries, now)
+	return true
+}
+
+// globalRateLimiter is shared across all AI handlers.
+var globalRateLimiter = newRateLimiter()
+
+// requireAuth checks that the user is authenticated in multi-user mode.
+// Returns the userID and true if OK, or writes an HTTP error and returns false.
+func requireAuth(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if !common.IsMultiUserMode() {
+		return "", true
+	}
+	userID := extractUserID(r)
+	if userID == "" {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return "", false
+	}
+	return userID, true
+}
 
 // NewSSEHandler creates an HTTP handler for streaming AI chat via Server-Sent Events.
 // Registered at POST /apis/v2beta1/ai/chat/stream
@@ -45,12 +106,12 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 
 		// Parse request body with size limit
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		defer r.Body.Close()
 
 		var req ChatRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -60,6 +121,22 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 
 		userID := extractUserID(r)
 		req.UserID = userID
+
+		// Authenticate in multi-user mode
+		if common.IsMultiUserMode() && userID == "" {
+			http.Error(w, "Authentication required", http.StatusUnauthorized)
+			return
+		}
+
+		// Per-user rate limiting
+		rateLimitKey := userID
+		if rateLimitKey == "" {
+			rateLimitKey = r.RemoteAddr
+		}
+		if !globalRateLimiter.allow(rateLimitKey) {
+			http.Error(w, "Rate limit exceeded. Please wait before sending another message.", http.StatusTooManyRequests)
+			return
+		}
 
 		if req.Message == "" {
 			http.Error(w, "message is required", http.StatusBadRequest)
@@ -98,11 +175,11 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 		ctx := r.Context()
 		if err := aiServer.StreamChat(ctx, &req, sendEvent); err != nil {
 			glog.Errorf("Chat error: %v", err)
-			// Try to send error event if connection is still open
+			// Send sanitized error event to client
 			errEvent := ChatResponseEvent{
 				Type: "error",
 				Data: map[string]interface{}{
-					"message":   err.Error(),
+					"message":   "An error occurred processing your request. Please try again.",
 					"code":      "internal_error",
 					"retryable": false,
 				},
@@ -128,12 +205,12 @@ func NewApproveHandler(aiServer *AIServer) http.HandlerFunc {
 		}
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		defer r.Body.Close()
 
 		var req ApproveToolCallRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -143,6 +220,10 @@ func NewApproveHandler(aiServer *AIServer) http.HandlerFunc {
 
 		userID := extractUserID(r)
 		if common.IsMultiUserMode() {
+			if userID == "" {
+				http.Error(w, "Authentication required", http.StatusUnauthorized)
+				return
+			}
 			if err := aiServer.ValidateSessionOwner(req.SessionID, userID); err != nil {
 				http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusForbidden)
 				return
@@ -168,13 +249,30 @@ func NewGenerateDocsHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		// Auth check
+		userID, ok := requireAuth(w, r)
+		if !ok {
+			return
+		}
+		_ = userID
+
+		// Rate limiting
+		rateLimitKey := userID
+		if rateLimitKey == "" {
+			rateLimitKey = r.RemoteAddr
+		}
+		if !globalRateLimiter.allow(rateLimitKey) {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		defer r.Body.Close()
 
 		var req struct {
 			PipelineID        string `json:"pipeline_id"`
@@ -253,6 +351,11 @@ func NewListRulesHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		// Auth check
+		if _, ok := requireAuth(w, r); !ok {
+			return
+		}
+
 		rules := aiServer.ListRules()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -270,13 +373,18 @@ func NewToggleRuleHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		// Auth check
+		if _, ok := requireAuth(w, r); !ok {
+			return
+		}
+
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		defer r.Body.Close()
 
 		var req struct {
 			RuleID  string `json:"rule_id"`
@@ -317,7 +425,9 @@ func extractUserID(r *http.Request) string {
 }
 
 func generateSessionID() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return fmt.Sprintf("session-%d-%s", time.Now().UnixNano(), hex.EncodeToString(b))
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+	return "session-" + hex.EncodeToString(b)
 }

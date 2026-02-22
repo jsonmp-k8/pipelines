@@ -15,6 +15,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -522,7 +523,9 @@ func TestConcurrentAccess(t *testing.T) {
 
 func TestNewSessionManager(t *testing.T) {
 	// Verify that NewSessionManager returns a valid manager with an initialized map.
-	sm := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sm := NewSessionManager(ctx)
 	if sm == nil {
 		t.Fatalf("NewSessionManager returned nil")
 	}

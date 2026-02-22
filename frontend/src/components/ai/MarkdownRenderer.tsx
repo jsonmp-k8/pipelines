@@ -15,6 +15,7 @@
  */
 
 import * as React from 'react';
+import Markdown from 'markdown-to-jsx';
 import { stylesheet } from 'typestyle';
 import { color } from '../../Css';
 
@@ -99,97 +100,22 @@ interface MarkdownRendererProps {
   content: string;
 }
 
-/**
- * Simple markdown renderer that converts basic markdown to HTML.
- * Uses a lightweight approach to avoid pulling in heavy dependencies.
- */
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
-  const html = React.useMemo(() => renderMarkdown(content), [content]);
-
-  return <div className={css.markdown} dangerouslySetInnerHTML={{ __html: html }} />;
+const markdownOptions = {
+  forceBlock: true,
+  overrides: {
+    a: {
+      props: {
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      },
+    },
+  },
 };
 
-function renderMarkdown(md: string): string {
-  let html = escapeHtml(md);
-
-  // Code blocks (``` ... ```)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
-    return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
-  });
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // Headers
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // Unordered lists
-  html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, match => `<ul>${match}</ul>`);
-
-  // Ordered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-  // Blockquotes
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // Links — sanitize href to only allow safe protocols
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, href) => {
-    const sanitizedHref = sanitizeHref(href);
-    if (!sanitizedHref) {
-      return text; // Render as plain text if href is unsafe
-    }
-    return `<a href="${sanitizedHref}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-  });
-
-  // Paragraphs (double newlines)
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = `<p>${html}</p>`;
-
-  // Clean up empty paragraphs
-  html = html.replace(/<p><\/p>/g, '');
-  html = html.replace(/<p>(<h[123]>)/g, '$1');
-  html = html.replace(/(<\/h[123]>)<\/p>/g, '$1');
-  html = html.replace(/<p>(<pre>)/g, '$1');
-  html = html.replace(/(<\/pre>)<\/p>/g, '$1');
-  html = html.replace(/<p>(<ul>)/g, '$1');
-  html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-  html = html.replace(/<p>(<blockquote>)/g, '$1');
-  html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
-
-  // Single newlines to <br> within paragraphs
-  html = html.replace(/([^>])\n([^<])/g, '$1<br>$2');
-
-  return html;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function sanitizeHref(href: string): string | null {
-  const trimmed = href.trim();
-  // Only allow http, https, and relative URLs. Block javascript:, data:, vbscript:, etc.
-  if (/^https?:\/\//i.test(trimmed) || /^[/#]/.test(trimmed)) {
-    return trimmed;
-  }
-  // Block any scheme (e.g., javascript:, data:, vbscript:)
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
-    return null;
-  }
-  // Allow relative URLs
-  return trimmed;
-}
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
+  return (
+    <div className={css.markdown}>
+      <Markdown options={markdownOptions}>{content}</Markdown>
+    </div>
+  );
+};

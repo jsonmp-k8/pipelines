@@ -15,10 +15,12 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/provider"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
 )
@@ -26,6 +28,13 @@ import (
 const (
 	// SessionTimeout is the duration after which idle sessions are cleaned up.
 	SessionTimeout = 30 * time.Minute
+
+	// MaxSessions is the maximum number of concurrent sessions allowed.
+	MaxSessions = 1000
+
+	// MaxMessagesPerSession is the maximum number of messages retained per session.
+	// Older messages are trimmed when the limit is exceeded.
+	MaxMessagesPerSession = 200
 )
 
 // Session represents an AI chat session with conversation history.
@@ -60,11 +69,12 @@ type SessionManager struct {
 }
 
 // NewSessionManager creates a new session manager.
-func NewSessionManager() *SessionManager {
+// The provided context controls the lifetime of the background cleanup goroutine.
+func NewSessionManager(ctx context.Context) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 	}
-	go sm.cleanupLoop()
+	go sm.cleanupLoop(ctx)
 	return sm
 }
 
@@ -108,6 +118,11 @@ func (sm *SessionManager) GetOrCreate(sessionID string, mode tools.ChatMode, use
 		return s
 	}
 
+	// Enforce max session count by evicting least-recently-used sessions.
+	if len(sm.sessions) >= MaxSessions {
+		sm.evictLRU()
+	}
+
 	s := &Session{
 		ID:                   sessionID,
 		UserID:               userID,
@@ -119,6 +134,36 @@ func (sm *SessionManager) GetOrCreate(sessionID string, mode tools.ChatMode, use
 	}
 	sm.sessions[sessionID] = s
 	return s
+}
+
+// evictLRU removes the least-recently-used session. Caller must hold sm.mu write lock.
+func (sm *SessionManager) evictLRU() {
+	var oldestID string
+	var oldestTime time.Time
+
+	for id, s := range sm.sessions {
+		s.mu.Lock()
+		accessed := s.LastAccessedAt
+		s.mu.Unlock()
+		if oldestID == "" || accessed.Before(oldestTime) {
+			oldestID = id
+			oldestTime = accessed
+		}
+	}
+
+	if oldestID != "" {
+		s := sm.sessions[oldestID]
+		s.mu.Lock()
+		for _, p := range s.PendingConfirmations {
+			select {
+			case p.ResultCh <- ToolCallDecision{Approved: false}:
+			default:
+			}
+		}
+		s.mu.Unlock()
+		delete(sm.sessions, oldestID)
+		glog.Warningf("Evicted LRU session %s to enforce max session limit", oldestID)
+	}
 }
 
 // Get retrieves an existing session.
@@ -133,6 +178,23 @@ func (sm *SessionManager) Get(sessionID string) (*Session, bool) {
 		s.mu.Unlock()
 	}
 	return s, ok
+}
+
+// GetMessages returns a snapshot of the session's messages, safe for concurrent use.
+func (sm *SessionManager) GetMessages(sessionID string) ([]provider.Message, error) {
+	sm.mu.RLock()
+	s, ok := sm.sessions[sessionID]
+	sm.mu.RUnlock()
+
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot := make([]provider.Message, len(s.Messages))
+	copy(snapshot, s.Messages)
+	return snapshot, nil
 }
 
 // ValidateSessionOwner checks that the given userID matches the session's owner.
@@ -153,6 +215,7 @@ func (sm *SessionManager) ValidateSessionOwner(sessionID, userID string) error {
 }
 
 // AddMessage appends a message to the session's conversation history.
+// If the message count exceeds MaxMessagesPerSession, older messages are trimmed.
 func (sm *SessionManager) AddMessage(sessionID string, msg provider.Message) error {
 	sm.mu.RLock()
 	s, ok := sm.sessions[sessionID]
@@ -166,6 +229,13 @@ func (sm *SessionManager) AddMessage(sessionID string, msg provider.Message) err
 	defer s.mu.Unlock()
 	s.Messages = append(s.Messages, msg)
 	s.LastAccessedAt = time.Now()
+
+	// Trim old messages if over limit, keeping the most recent ones.
+	if len(s.Messages) > MaxMessagesPerSession {
+		excess := len(s.Messages) - MaxMessagesPerSession
+		s.Messages = s.Messages[excess:]
+	}
+
 	return nil
 }
 
@@ -245,8 +315,8 @@ func (sm *SessionManager) CleanupExpired() {
 			continue
 		}
 		s.mu.Lock()
-		// Re-check expiry under lock to avoid TOCTOU.
-		if now.Sub(s.LastAccessedAt) > SessionTimeout {
+		// Re-check expiry under lock to avoid TOCTOU. Use time.Since for accuracy.
+		if time.Since(s.LastAccessedAt) > SessionTimeout {
 			// Send denial to any pending confirmations instead of closing channels.
 			for _, p := range s.PendingConfirmations {
 				select {
@@ -260,10 +330,15 @@ func (sm *SessionManager) CleanupExpired() {
 	}
 }
 
-func (sm *SessionManager) cleanupLoop() {
+func (sm *SessionManager) cleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		sm.CleanupExpired()
+	for {
+		select {
+		case <-ticker.C:
+			sm.CleanupExpired()
+		case <-ctx.Done():
+			return
+		}
 	}
 }

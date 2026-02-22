@@ -120,7 +120,7 @@ func (s *MCPServer) handleCallTool(w http.ResponseWriter, ctx context.Context, i
 		return
 	}
 
-	result, err := tool.Execute(ctx, args)
+	result, err := tool.Execute(ctx, tools.ChatModeAsk, args)
 	if err != nil {
 		glog.Errorf("MCP tool execution error for %s: %v", name, err)
 		writeJSONRPCResult(w, id, map[string]interface{}{

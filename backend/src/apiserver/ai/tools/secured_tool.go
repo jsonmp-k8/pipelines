@@ -14,7 +14,10 @@
 
 package tools
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // SecuredTool wraps a Tool and enforces confirmation for mutating operations.
 type SecuredTool struct {
@@ -26,12 +29,20 @@ func NewSecuredTool(tool Tool) *SecuredTool {
 	return &SecuredTool{inner: tool}
 }
 
-func (s *SecuredTool) Name() string                    { return s.inner.Name() }
-func (s *SecuredTool) Description() string             { return s.inner.Description() }
+func (s *SecuredTool) Name() string                        { return s.inner.Name() }
+func (s *SecuredTool) Description() string                 { return s.inner.Description() }
 func (s *SecuredTool) InputSchema() map[string]interface{} { return s.inner.InputSchema() }
-func (s *SecuredTool) IsReadOnly() bool                { return s.inner.IsReadOnly() }
+func (s *SecuredTool) IsReadOnly() bool                    { return s.inner.IsReadOnly() }
 
-func (s *SecuredTool) Execute(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
+// Execute runs the tool after verifying the mode allows it.
+// Mutating tools are blocked in Ask mode as a defense-in-depth measure.
+func (s *SecuredTool) Execute(ctx context.Context, mode ChatMode, args map[string]interface{}) (*ToolResult, error) {
+	if s.IsBlocked(mode) {
+		return &ToolResult{
+			Content: fmt.Sprintf("Tool %s is not available in Ask mode. Switch to Agent mode to use mutating tools.", s.inner.Name()),
+			IsError: true,
+		}, nil
+	}
 	return s.inner.Execute(ctx, args)
 }
 
@@ -46,10 +57,11 @@ func (s *SecuredTool) NeedsConfirmation(mode ChatMode) bool {
 }
 
 // IsBlocked returns true if the tool cannot be executed in the given mode.
-// Mutating tools are blocked in Ask mode.
+// Mutating tools are blocked in Ask mode. Unknown modes are treated as Ask (safe default).
 func (s *SecuredTool) IsBlocked(mode ChatMode) bool {
 	if s.inner.IsReadOnly() {
 		return false
 	}
-	return mode == ChatModeAsk
+	// Only Agent mode allows mutating tools.
+	return mode != ChatModeAgent
 }

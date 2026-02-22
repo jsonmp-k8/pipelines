@@ -119,7 +119,8 @@ func findEvents(events []ChatResponseEvent, eventType string) []ChatResponseEven
 
 // newTestServer creates an AIServer with the given mock model and optional tool registry.
 func newTestServer(model provider.ChatModel, reg *tools.ToolRegistry) *AIServer {
-	sm := session.NewSessionManager()
+	ctx := context.Background()
+	sm := session.NewSessionManager(ctx)
 	rm := rules.NewRuleManager()
 	cb := aicontext.NewContextBuilder(nil)
 	if reg == nil {

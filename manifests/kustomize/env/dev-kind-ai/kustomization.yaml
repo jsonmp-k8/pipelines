@@ -4,6 +4,6 @@ kind: Kustomization
 resources:
 - ../dev-kind
 
-patchesStrategicMerge:
-- ai-config-patch.yaml
-- ai-deployment-patch.yaml
+patches:
+- path: ai-config-patch.yaml
+- path: ai-deployment-patch.yaml
