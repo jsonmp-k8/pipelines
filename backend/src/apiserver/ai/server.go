@@ -36,6 +36,7 @@ type ChatRequest struct {
 	SessionID   string                `json:"session_id"`
 	Mode        int                   `json:"mode"` // 1=Ask, 2=Agent
 	PageContext *aicontext.PageContext `json:"page_context,omitempty"`
+	UserID      string                `json:"-"` // Set by server, not from JSON
 }
 
 // ChatResponseEvent represents a streaming response event.
@@ -86,7 +87,7 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 		mode = tools.ChatModeAsk
 	}
 
-	sess := s.sessionManager.GetOrCreate(req.SessionID, mode)
+	sess := s.sessionManager.GetOrCreate(req.SessionID, mode, req.UserID)
 
 	sendEvent(ChatResponseEvent{
 		Type: "session_metadata",
@@ -382,6 +383,11 @@ func (s *AIServer) isToolReadOnly(name string) bool {
 // ApproveToolCall resolves a pending tool call confirmation.
 func (s *AIServer) ApproveToolCall(req *ApproveToolCallRequest) error {
 	return s.sessionManager.ResolveConfirmation(req.SessionID, req.ToolCallID, req.Approved)
+}
+
+// ValidateSessionOwner checks that the given userID matches the session's owner.
+func (s *AIServer) ValidateSessionOwner(sessionID, userID string) error {
+	return s.sessionManager.ValidateSessionOwner(sessionID, userID)
 }
 
 // ListRules returns all available rules.

@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/list"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/model"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
@@ -64,6 +65,13 @@ func (t *ListExperimentsTool) Execute(ctx context.Context, args map[string]inter
 	filterContext := &model.FilterContext{}
 	if ns, ok := args["namespace"].(string); ok && ns != "" {
 		filterContext.ReferenceKey = &model.ReferenceKey{Type: model.NamespaceResourceType, ID: ns}
+	}
+
+	// Authorization check
+	if ns, ok := args["namespace"].(string); ok && ns != "" {
+		if err := checkAccess(ctx, t.resourceManager, ns, common.RbacResourceVerbList, common.RbacResourceTypeExperiments); err != nil {
+			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
+		}
 	}
 
 	opts, err := list.NewOptions(&model.Experiment{}, pageSize, "", nil)

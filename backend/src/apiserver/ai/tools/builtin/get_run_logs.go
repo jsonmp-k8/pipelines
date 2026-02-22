@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
 )
 
@@ -54,6 +55,10 @@ func (t *GetRunLogsTool) Execute(ctx context.Context, args map[string]interface{
 	runID, ok := args["run_id"].(string)
 	if !ok || runID == "" {
 		return &tools.ToolResult{Content: "run_id is required", IsError: true}, nil
+	}
+
+	if err := checkRunAccess(ctx, t.resourceManager, runID, common.RbacResourceVerbGet); err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
 
 	run, err := t.resourceManager.GetRun(runID)

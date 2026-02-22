@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/list"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/model"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
@@ -71,6 +72,18 @@ func (t *ListRunsTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 	if expID, ok := args["experiment_id"].(string); ok && expID != "" {
 		filterContext.ReferenceKey = &model.ReferenceKey{Type: model.ExperimentResourceType, ID: expID}
+	}
+
+	// Authorization checks
+	if ns, ok := args["namespace"].(string); ok && ns != "" {
+		if err := checkAccess(ctx, t.resourceManager, ns, common.RbacResourceVerbList, common.RbacResourceTypeRuns); err != nil {
+			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
+		}
+	}
+	if expID, ok := args["experiment_id"].(string); ok && expID != "" {
+		if err := checkExperimentAccess(ctx, t.resourceManager, expID, common.RbacResourceVerbList); err != nil {
+			return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
+		}
 	}
 
 	opts, err := list.NewOptions(&model.Run{}, pageSize, "", nil)

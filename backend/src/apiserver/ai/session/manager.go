@@ -31,6 +31,7 @@ const (
 // Session represents an AI chat session with conversation history.
 type Session struct {
 	ID                   string
+	UserID               string
 	Messages             []provider.Message
 	Mode                 tools.ChatMode
 	PendingConfirmations map[string]*PendingToolCall
@@ -68,12 +69,39 @@ func NewSessionManager() *SessionManager {
 }
 
 // GetOrCreate retrieves an existing session or creates a new one.
-func (sm *SessionManager) GetOrCreate(sessionID string, mode tools.ChatMode) *Session {
+// The userID parameter binds the session to the authenticated caller;
+// if a session already exists for a different user a new, user-scoped
+// session is created instead of reusing the existing one.
+func (sm *SessionManager) GetOrCreate(sessionID string, mode tools.ChatMode, userID string) *Session {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	if s, ok := sm.sessions[sessionID]; ok {
 		s.mu.Lock()
+		if s.UserID != "" && userID != "" && s.UserID != userID {
+			s.mu.Unlock()
+			// Create a new session for this user instead of reusing another user's session
+			sessionID = sessionID + "-" + userID
+			// Check again
+			if s2, ok2 := sm.sessions[sessionID]; ok2 {
+				s2.mu.Lock()
+				s2.LastAccessedAt = time.Now()
+				s2.Mode = mode
+				s2.mu.Unlock()
+				return s2
+			}
+			s = &Session{
+				ID:                   sessionID,
+				UserID:               userID,
+				Messages:             nil,
+				Mode:                 mode,
+				PendingConfirmations: make(map[string]*PendingToolCall),
+				CreatedAt:            time.Now(),
+				LastAccessedAt:       time.Now(),
+			}
+			sm.sessions[sessionID] = s
+			return s
+		}
 		s.LastAccessedAt = time.Now()
 		s.Mode = mode
 		s.mu.Unlock()
@@ -82,6 +110,7 @@ func (sm *SessionManager) GetOrCreate(sessionID string, mode tools.ChatMode) *Se
 
 	s := &Session{
 		ID:                   sessionID,
+		UserID:               userID,
 		Messages:             nil,
 		Mode:                 mode,
 		PendingConfirmations: make(map[string]*PendingToolCall),
@@ -104,6 +133,23 @@ func (sm *SessionManager) Get(sessionID string) (*Session, bool) {
 		s.mu.Unlock()
 	}
 	return s, ok
+}
+
+// ValidateSessionOwner checks that the given userID matches the session's owner.
+// Returns an error if the session exists and belongs to a different user.
+func (sm *SessionManager) ValidateSessionOwner(sessionID, userID string) error {
+	sm.mu.RLock()
+	s, ok := sm.sessions[sessionID]
+	sm.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("session %s not found", sessionID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.UserID != "" && userID != "" && s.UserID != userID {
+		return fmt.Errorf("session %s does not belong to the requesting user", sessionID)
+	}
+	return nil
 }
 
 // AddMessage appends a message to the session's conversation history.

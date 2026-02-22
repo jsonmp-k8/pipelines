@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/model"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
 )
@@ -66,6 +67,10 @@ func (t *CreateExperimentTool) Execute(ctx context.Context, args map[string]inte
 
 	if name == "" {
 		return &tools.ToolResult{Content: "name is required", IsError: true}, nil
+	}
+
+	if err := checkAccess(ctx, t.resourceManager, namespace, common.RbacResourceVerbCreate, common.RbacResourceTypeExperiments); err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
 
 	experiment := &model.Experiment{

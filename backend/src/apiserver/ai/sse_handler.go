@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 )
 
 const (
@@ -55,6 +57,9 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 			http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
+
+		userID := extractUserID(r)
+		req.UserID = userID
 
 		if req.Message == "" {
 			http.Error(w, "message is required", http.StatusBadRequest)
@@ -136,6 +141,14 @@ func NewApproveHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		userID := extractUserID(r)
+		if common.IsMultiUserMode() {
+			if err := aiServer.ValidateSessionOwner(req.SessionID, userID); err != nil {
+				http.Error(w, fmt.Sprintf("Unauthorized: %v", err), http.StatusForbidden)
+				return
+			}
+		}
+
 		if err := aiServer.ApproveToolCall(&req); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to process approval: %v", err), http.StatusBadRequest)
 			return
@@ -172,9 +185,35 @@ func NewGenerateDocsHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
-		// Single-shot LLM call for doc generation
 		ctx := r.Context()
-		prompt := fmt.Sprintf("Generate comprehensive documentation for pipeline %s.", req.PipelineID)
+
+		// Fetch pipeline spec to ground the documentation
+		pipelineID := req.PipelineID
+		if pipelineID == "" {
+			http.Error(w, "pipeline_id is required", http.StatusBadRequest)
+			return
+		}
+
+		specContext := ""
+		// Try to get pipeline metadata
+		if pipeline, err := aiServer.contextBuilder.GetResourceManager().GetPipeline(pipelineID); err == nil {
+			specContext += fmt.Sprintf("Pipeline Name: %s\nDescription: %s\nNamespace: %s\n\n",
+				pipeline.Name, pipeline.Description, pipeline.Namespace)
+		}
+
+		// Try to get the actual pipeline spec/template
+		versionID := req.PipelineVersionID
+		if versionID != "" {
+			if templateBytes, err := aiServer.contextBuilder.GetResourceManager().GetPipelineVersionTemplate(versionID); err == nil {
+				specContext += fmt.Sprintf("Pipeline Spec (version %s):\n```json\n%s\n```\n", versionID, string(templateBytes))
+			}
+		} else {
+			if templateBytes, err := aiServer.contextBuilder.GetResourceManager().GetPipelineLatestTemplate(pipelineID); err == nil {
+				specContext += fmt.Sprintf("Pipeline Spec (latest version):\n```json\n%s\n```\n", string(templateBytes))
+			}
+		}
+
+		prompt := fmt.Sprintf("Generate comprehensive documentation for the following pipeline. Include an overview, description of each component/step, input parameters, output artifacts, and usage examples.\n\n%s", specContext)
 
 		chatReq := &ChatRequest{
 			Message:   prompt,
@@ -259,6 +298,22 @@ func NewToggleRuleHandler(aiServer *AIServer) http.HandlerFunc {
 			"rule": rule,
 		})
 	}
+}
+
+// extractUserID extracts the user identity from HTTP request headers.
+// It checks the Kubeflow user ID header (configurable, defaults to x-goog-authenticated-user-email).
+// Returns empty string if not in multi-user mode or no header present.
+func extractUserID(r *http.Request) string {
+	if !common.IsMultiUserMode() {
+		return ""
+	}
+	header := common.GetKubeflowUserIDHeader()
+	prefix := common.GetKubeflowUserIDPrefix()
+	value := r.Header.Get(header)
+	if value == "" {
+		return ""
+	}
+	return strings.TrimPrefix(value, prefix)
 }
 
 func generateSessionID() string {

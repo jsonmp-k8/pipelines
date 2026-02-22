@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/model"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
 )
@@ -66,6 +67,10 @@ func (t *CreatePipelineVersionTool) Execute(ctx context.Context, args map[string
 
 	if pipelineID == "" || name == "" {
 		return &tools.ToolResult{Content: "pipeline_id and name are required", IsError: true}, nil
+	}
+
+	if err := checkPipelineAccess(ctx, t.resourceManager, pipelineID, common.RbacResourceVerbCreate); err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
 
 	pv := &model.PipelineVersion{

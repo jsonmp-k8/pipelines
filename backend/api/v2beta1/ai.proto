@@ -57,7 +57,7 @@ service AIService {
   // Chat sends a message and streams back an agentic AI response.
   rpc Chat(ChatRequest) returns (stream ChatResponse) {
     option (google.api.http) = {
-      post: "/apis/v2beta1/ai/chat"
+      post: "/apis/v2beta1/ai/chat/stream"
       body: "*"
     };
   }
@@ -70,26 +70,11 @@ service AIService {
     };
   }
 
-  // GeneratePipeline generates a pipeline spec from a natural language description.
-  rpc GeneratePipeline(GeneratePipelineRequest) returns (GeneratePipelineResponse) {
-    option (google.api.http) = {
-      post: "/apis/v2beta1/ai/generate-pipeline"
-      body: "*"
-    };
-  }
-
   // GenerateDocumentation generates documentation for a pipeline.
   rpc GenerateDocumentation(GenerateDocumentationRequest) returns (GenerateDocumentationResponse) {
     option (google.api.http) = {
       post: "/apis/v2beta1/ai/generate-docs"
       body: "*"
-    };
-  }
-
-  // ListMCPServers lists configured MCP servers.
-  rpc ListMCPServers(ListMCPServersRequest) returns (ListMCPServersResponse) {
-    option (google.api.http) = {
-      get: "/apis/v2beta1/ai/mcp-servers"
     };
   }
 
@@ -287,24 +272,6 @@ message ApproveToolCallResponse {
   bool success = 1;
 }
 
-// GeneratePipelineRequest requests pipeline generation from natural language.
-message GeneratePipelineRequest {
-  // Natural language description of the desired pipeline.
-  string description = 1;
-  // Target SDK (e.g., "kfp-v2").
-  string target_sdk = 2;
-}
-
-// GeneratePipelineResponse contains the generated pipeline.
-message GeneratePipelineResponse {
-  // Generated pipeline spec as JSON.
-  string pipeline_spec_json = 1;
-  // Generated Python code for the pipeline.
-  string python_code = 2;
-  // Explanation of the generated pipeline.
-  string explanation = 3;
-}
-
 // GenerateDocumentationRequest requests documentation generation.
 message GenerateDocumentationRequest {
   // The pipeline ID to generate docs for.
@@ -317,27 +284,6 @@ message GenerateDocumentationRequest {
 message GenerateDocumentationResponse {
   // Generated documentation in markdown format.
   string documentation_markdown = 1;
-}
-
-// ListMCPServersRequest lists configured MCP servers.
-message ListMCPServersRequest {}
-
-// MCPServer represents a configured MCP server.
-message MCPServer {
-  // Server name.
-  string name = 1;
-  // Server URL.
-  string url = 2;
-  // Server status.
-  string status = 3;
-  // Available tools from this server.
-  repeated string tools = 4;
-}
-
-// ListMCPServersResponse contains the list of MCP servers.
-message ListMCPServersResponse {
-  // List of MCP servers.
-  repeated MCPServer servers = 1;
 }
 
 // Rule represents an AI behavior rule.

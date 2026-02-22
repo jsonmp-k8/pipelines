@@ -61,6 +61,11 @@ func NewContextBuilder(rm *resource.ResourceManager) *ContextBuilder {
 	return &ContextBuilder{resourceManager: rm}
 }
 
+// GetResourceManager returns the underlying resource manager.
+func (cb *ContextBuilder) GetResourceManager() *resource.ResourceManager {
+	return cb.resourceManager
+}
+
 // BuildSystemPrompt constructs the full system prompt including page context and rules.
 func (cb *ContextBuilder) BuildSystemPrompt(pageCtx *PageContext, rulesContent string) string {
 	var parts []string

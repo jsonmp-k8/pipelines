@@ -35,7 +35,7 @@ func newTestManager() *SessionManager {
 func TestGetOrCreate_NewSession(t *testing.T) {
 	sm := newTestManager()
 
-	s := sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	s := sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 	if s == nil {
 		t.Fatalf("GetOrCreate returned nil for new session")
 	}
@@ -59,8 +59,8 @@ func TestGetOrCreate_NewSession(t *testing.T) {
 func TestGetOrCreate_ReturnsExistingSession(t *testing.T) {
 	sm := newTestManager()
 
-	s1 := sm.GetOrCreate("sess-1", tools.ChatModeAsk)
-	s2 := sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	s1 := sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
+	s2 := sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 
 	if s1 != s2 {
 		t.Fatalf("GetOrCreate returned a different session pointer for the same ID")
@@ -70,12 +70,12 @@ func TestGetOrCreate_ReturnsExistingSession(t *testing.T) {
 func TestGetOrCreate_UpdatesModeOnExistingSession(t *testing.T) {
 	sm := newTestManager()
 
-	s := sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	s := sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 	if s.Mode != tools.ChatModeAsk {
 		t.Fatalf("expected initial mode %d, got %d", tools.ChatModeAsk, s.Mode)
 	}
 
-	s2 := sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	s2 := sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 	if s2.Mode != tools.ChatModeAgent {
 		t.Errorf("expected mode to be updated to %d, got %d", tools.ChatModeAgent, s2.Mode)
 	}
@@ -84,7 +84,7 @@ func TestGetOrCreate_UpdatesModeOnExistingSession(t *testing.T) {
 func TestGet_ExistingSession(t *testing.T) {
 	sm := newTestManager()
 
-	sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 	s, ok := sm.Get("sess-1")
 	if !ok {
 		t.Fatalf("Get returned false for existing session")
@@ -111,7 +111,7 @@ func TestGet_NonExistentSession(t *testing.T) {
 
 func TestAddMessage_Success(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 
 	msg := provider.Message{Role: "user", Content: "hello"}
 	if err := sm.AddMessage("sess-1", msg); err != nil {
@@ -132,7 +132,7 @@ func TestAddMessage_Success(t *testing.T) {
 
 func TestAddMessage_MultipleMessages(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAsk)
+	sm.GetOrCreate("sess-1", tools.ChatModeAsk, "")
 
 	msgs := []provider.Message{
 		{Role: "user", Content: "hello"},
@@ -163,7 +163,7 @@ func TestAddMessage_UnknownSession(t *testing.T) {
 
 func TestAddPendingConfirmation_Success(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 
 	pending := &PendingToolCall{
 		ToolCallID: "tc-1",
@@ -203,7 +203,7 @@ func TestAddPendingConfirmation_UnknownSession(t *testing.T) {
 
 func TestResolveConfirmation_Approved(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 
 	resultCh := make(chan ToolCallDecision, 1)
 	pending := &PendingToolCall{
@@ -241,7 +241,7 @@ func TestResolveConfirmation_Approved(t *testing.T) {
 
 func TestResolveConfirmation_Denied(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 
 	resultCh := make(chan ToolCallDecision, 1)
 	pending := &PendingToolCall{
@@ -279,7 +279,7 @@ func TestResolveConfirmation_UnknownSession(t *testing.T) {
 
 func TestResolveConfirmation_UnknownToolCall(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 
 	err := sm.ResolveConfirmation("sess-1", "nonexistent-tc", true)
 	if err == nil {
@@ -289,7 +289,7 @@ func TestResolveConfirmation_UnknownToolCall(t *testing.T) {
 
 func TestResolveConfirmation_NonBlockingSend(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("sess-1", tools.ChatModeAgent)
+	sm.GetOrCreate("sess-1", tools.ChatModeAgent, "")
 
 	// Use a buffered channel of size 1 and pre-fill it to simulate the
 	// case where a decision was already sent (e.g., by cleanup).
@@ -326,13 +326,13 @@ func TestCleanupExpired_RemovesOldSessions(t *testing.T) {
 	sm := newTestManager()
 
 	// Create a session and manually set its LastAccessedAt to the past.
-	s := sm.GetOrCreate("old-session", tools.ChatModeAsk)
+	s := sm.GetOrCreate("old-session", tools.ChatModeAsk, "")
 	s.mu.Lock()
 	s.LastAccessedAt = time.Now().Add(-SessionTimeout - time.Minute)
 	s.mu.Unlock()
 
 	// Create a recent session that should survive.
-	sm.GetOrCreate("new-session", tools.ChatModeAsk)
+	sm.GetOrCreate("new-session", tools.ChatModeAsk, "")
 
 	sm.CleanupExpired()
 
@@ -347,7 +347,7 @@ func TestCleanupExpired_RemovesOldSessions(t *testing.T) {
 func TestCleanupExpired_SendsDenialToPending(t *testing.T) {
 	sm := newTestManager()
 
-	s := sm.GetOrCreate("expiring-session", tools.ChatModeAgent)
+	s := sm.GetOrCreate("expiring-session", tools.ChatModeAgent, "")
 
 	resultCh := make(chan ToolCallDecision, 1)
 	pending := &PendingToolCall{
@@ -384,8 +384,8 @@ func TestCleanupExpired_SendsDenialToPending(t *testing.T) {
 
 func TestCleanupExpired_NoExpiredSessions(t *testing.T) {
 	sm := newTestManager()
-	sm.GetOrCreate("active-1", tools.ChatModeAsk)
-	sm.GetOrCreate("active-2", tools.ChatModeAgent)
+	sm.GetOrCreate("active-1", tools.ChatModeAsk, "")
+	sm.GetOrCreate("active-2", tools.ChatModeAgent, "")
 
 	sm.CleanupExpired()
 
@@ -399,7 +399,7 @@ func TestCleanupExpired_NoExpiredSessions(t *testing.T) {
 
 func TestCleanupExpired_MultiplePendingConfirmations(t *testing.T) {
 	sm := newTestManager()
-	s := sm.GetOrCreate("multi-pending", tools.ChatModeAgent)
+	s := sm.GetOrCreate("multi-pending", tools.ChatModeAgent, "")
 
 	channels := make([]chan ToolCallDecision, 3)
 	for i := 0; i < 3; i++ {
@@ -439,7 +439,7 @@ func TestConcurrentAccess(t *testing.T) {
 	const numGoroutines = 50
 	const sessionID = "concurrent-session"
 
-	sm.GetOrCreate(sessionID, tools.ChatModeAsk)
+	sm.GetOrCreate(sessionID, tools.ChatModeAsk, "")
 
 	var wg sync.WaitGroup
 
@@ -452,7 +452,7 @@ func TestConcurrentAccess(t *testing.T) {
 			if idx%2 == 0 {
 				mode = tools.ChatModeAgent
 			}
-			s := sm.GetOrCreate(fmt.Sprintf("session-%d", idx), mode)
+			s := sm.GetOrCreate(fmt.Sprintf("session-%d", idx), mode, "")
 			if s == nil {
 				t.Errorf("GetOrCreate returned nil for session-%d", idx)
 			}
@@ -531,7 +531,7 @@ func TestNewSessionManager(t *testing.T) {
 	}
 
 	// Verify it works by creating a session.
-	s := sm.GetOrCreate("test-new", tools.ChatModeAsk)
+	s := sm.GetOrCreate("test-new", tools.ChatModeAsk, "")
 	if s == nil {
 		t.Errorf("GetOrCreate returned nil on manager from NewSessionManager")
 	}
@@ -540,7 +540,7 @@ func TestNewSessionManager(t *testing.T) {
 func TestGetOrCreate_UpdatesLastAccessedAt(t *testing.T) {
 	sm := newTestManager()
 
-	s := sm.GetOrCreate("sess-time", tools.ChatModeAsk)
+	s := sm.GetOrCreate("sess-time", tools.ChatModeAsk, "")
 	s.mu.Lock()
 	firstAccess := s.LastAccessedAt
 	s.mu.Unlock()
@@ -548,7 +548,7 @@ func TestGetOrCreate_UpdatesLastAccessedAt(t *testing.T) {
 	// Small sleep to ensure time advances.
 	time.Sleep(5 * time.Millisecond)
 
-	sm.GetOrCreate("sess-time", tools.ChatModeAsk)
+	sm.GetOrCreate("sess-time", tools.ChatModeAsk, "")
 	s.mu.Lock()
 	secondAccess := s.LastAccessedAt
 	s.mu.Unlock()
@@ -561,7 +561,7 @@ func TestGetOrCreate_UpdatesLastAccessedAt(t *testing.T) {
 func TestGet_UpdatesLastAccessedAt(t *testing.T) {
 	sm := newTestManager()
 
-	s := sm.GetOrCreate("sess-get-time", tools.ChatModeAsk)
+	s := sm.GetOrCreate("sess-get-time", tools.ChatModeAsk, "")
 	s.mu.Lock()
 	firstAccess := s.LastAccessedAt
 	s.mu.Unlock()

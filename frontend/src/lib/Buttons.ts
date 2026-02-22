@@ -21,6 +21,7 @@ import { QUERY_PARAMS, RoutePage } from 'src/components/Router';
 import { ToolbarActionMap } from 'src/components/Toolbar';
 import { PageProps } from 'src/pages/Page';
 import { openAIPanel } from 'src/components/ai/aiPanelOpener';
+import { isFeatureEnabled, FeatureKey } from 'src/features';
 import { Apis } from './Apis';
 import { URLParser } from './URLParser';
 import { errorToMessage, s } from './Utils';
@@ -408,6 +409,9 @@ export default class Buttons {
   }
 
   public aiAnalyze(getRunId: () => string, prompt?: string): Buttons {
+    if (!isFeatureEnabled(FeatureKey.AI_ASSISTANT)) {
+      return this;
+    }
     this._map[ButtonKeys.AI_ANALYZE] = {
       action: () => {
         const runId = getRunId();
@@ -424,6 +428,9 @@ export default class Buttons {
   }
 
   public aiGenerateDocs(getPipelineId: () => string): Buttons {
+    if (!isFeatureEnabled(FeatureKey.AI_ASSISTANT)) {
+      return this;
+    }
     this._map[ButtonKeys.AI_GENERATE_DOCS] = {
       action: () => {
         const pipelineId = getPipelineId();

@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
 )
 
@@ -54,6 +55,10 @@ func (t *GetPipelineTool) Execute(ctx context.Context, args map[string]interface
 	pipelineID, ok := args["pipeline_id"].(string)
 	if !ok || pipelineID == "" {
 		return &tools.ToolResult{Content: "pipeline_id is required", IsError: true}, nil
+	}
+
+	if err := checkPipelineAccess(ctx, t.resourceManager, pipelineID, common.RbacResourceVerbGet); err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
 
 	pipeline, err := t.resourceManager.GetPipeline(pipelineID)
