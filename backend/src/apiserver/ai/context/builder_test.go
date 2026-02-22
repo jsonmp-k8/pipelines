@@ -15,13 +15,14 @@
 package context
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
 
 func TestBuildSystemPrompt_NilPageCtxEmptyRules_ReturnsBasePromptOnly(t *testing.T) {
 	cb := NewContextBuilder(nil)
-	result := cb.BuildSystemPrompt(nil, "")
+	result := cb.BuildSystemPrompt(context.Background(), nil, "")
 
 	if result != systemPromptBase {
 		t.Errorf("expected base prompt only, got:\n%s", result)
@@ -31,7 +32,7 @@ func TestBuildSystemPrompt_NilPageCtxEmptyRules_ReturnsBasePromptOnly(t *testing
 func TestBuildSystemPrompt_WithRules_AppendsRulesSection(t *testing.T) {
 	cb := NewContextBuilder(nil)
 	rules := "Always respond in JSON format."
-	result := cb.BuildSystemPrompt(nil, rules)
+	result := cb.BuildSystemPrompt(context.Background(), nil, rules)
 
 	if !strings.Contains(result, systemPromptBase) {
 		t.Error("expected result to contain the base system prompt")
@@ -46,7 +47,7 @@ func TestBuildSystemPrompt_WithRules_AppendsRulesSection(t *testing.T) {
 
 func TestGatherPageContext_Nil_ReturnsEmpty(t *testing.T) {
 	cb := NewContextBuilder(nil)
-	result := cb.GatherPageContext(nil)
+	result := cb.GatherPageContext(context.Background(),nil)
 
 	if result != "" {
 		t.Errorf("expected empty string for nil page context, got %q", result)
@@ -60,7 +61,7 @@ func TestGatherPageContext_RunList_ReturnsRunListContext(t *testing.T) {
 		Namespace:    "test-namespace",
 		ExperimentID: "exp-123",
 	}
-	result := cb.GatherPageContext(pageCtx)
+	result := cb.GatherPageContext(context.Background(),pageCtx)
 
 	if !strings.Contains(result, "list of pipeline runs") {
 		t.Error("expected run list context message")
@@ -79,7 +80,7 @@ func TestGatherPageContext_PipelineList_ReturnsPipelineListContext(t *testing.T)
 		PageType:  "pipeline_list",
 		Namespace: "prod-ns",
 	}
-	result := cb.GatherPageContext(pageCtx)
+	result := cb.GatherPageContext(context.Background(),pageCtx)
 
 	if !strings.Contains(result, "list of pipelines") {
 		t.Error("expected pipeline list context message")
@@ -94,7 +95,7 @@ func TestGatherPageContext_UnknownPageType_ReturnsGenericMessage(t *testing.T) {
 	pageCtx := &PageContext{
 		PageType: "settings",
 	}
-	result := cb.GatherPageContext(pageCtx)
+	result := cb.GatherPageContext(context.Background(),pageCtx)
 
 	if !strings.Contains(result, "settings") {
 		t.Error("expected generic message to include the page type")
@@ -111,7 +112,7 @@ func TestGatherPageContext_RunDetails_EmptyRunID_ReturnsFallback(t *testing.T) {
 		PageType: "run_details",
 		RunID:    "",
 	}
-	result := cb.GatherPageContext(pageCtx)
+	result := cb.GatherPageContext(context.Background(),pageCtx)
 
 	expected := "The user is viewing run details but no run ID is available."
 	if result != expected {
@@ -125,7 +126,7 @@ func TestGatherPageContext_PipelineDetails_EmptyPipelineID_ReturnsFallback(t *te
 		PageType:   "pipeline_details",
 		PipelineID: "",
 	}
-	result := cb.GatherPageContext(pageCtx)
+	result := cb.GatherPageContext(context.Background(),pageCtx)
 
 	expected := "The user is viewing pipeline details but no pipeline ID is available."
 	if result != expected {

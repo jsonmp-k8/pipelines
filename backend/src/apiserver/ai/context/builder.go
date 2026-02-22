@@ -15,11 +15,15 @@
 package context
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/golang/glog"
+	authorizationv1 "k8s.io/api/authorization/v1"
+
+	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/resource"
 )
 
@@ -67,13 +71,14 @@ func (cb *ContextBuilder) GetResourceManager() *resource.ResourceManager {
 }
 
 // BuildSystemPrompt constructs the full system prompt including page context and rules.
-func (cb *ContextBuilder) BuildSystemPrompt(pageCtx *PageContext, rulesContent string) string {
+// ctx is used for RBAC checks when fetching resource data for page context.
+func (cb *ContextBuilder) BuildSystemPrompt(ctx context.Context, pageCtx *PageContext, rulesContent string) string {
 	var parts []string
 	parts = append(parts, systemPromptBase)
 
 	// Add page-specific context
 	if pageCtx != nil {
-		pageContextStr := cb.GatherPageContext(pageCtx)
+		pageContextStr := cb.GatherPageContext(ctx, pageCtx)
 		if pageContextStr != "" {
 			parts = append(parts, "\n## Current Page Context\n"+pageContextStr)
 		}
@@ -88,16 +93,17 @@ func (cb *ContextBuilder) BuildSystemPrompt(pageCtx *PageContext, rulesContent s
 }
 
 // GatherPageContext fetches relevant data based on the current page type.
-func (cb *ContextBuilder) GatherPageContext(pageCtx *PageContext) string {
+// ctx is used for RBAC checks — if the user lacks access, only generic context is returned.
+func (cb *ContextBuilder) GatherPageContext(ctx context.Context, pageCtx *PageContext) string {
 	if pageCtx == nil {
 		return ""
 	}
 
 	switch pageCtx.PageType {
 	case "run_details":
-		return cb.gatherRunContext(pageCtx.RunID)
+		return cb.gatherRunContext(ctx, pageCtx.RunID)
 	case "pipeline_details":
-		return cb.gatherPipelineContext(pageCtx.PipelineID)
+		return cb.gatherPipelineContext(ctx, pageCtx.PipelineID)
 	case "run_list":
 		return cb.gatherRunListContext(pageCtx.Namespace, pageCtx.ExperimentID)
 	case "pipeline_list":
@@ -107,9 +113,15 @@ func (cb *ContextBuilder) GatherPageContext(pageCtx *PageContext) string {
 	}
 }
 
-func (cb *ContextBuilder) gatherRunContext(runID string) string {
+func (cb *ContextBuilder) gatherRunContext(ctx context.Context, runID string) string {
 	if runID == "" {
 		return "The user is viewing run details but no run ID is available."
+	}
+
+	// RBAC check: verify the user has read access to this run before fetching.
+	if err := cb.checkRunAccess(ctx, runID); err != nil {
+		glog.Warningf("Run context access denied for %s: %v", runID, err)
+		return fmt.Sprintf("The user is viewing run %s.", runID)
 	}
 
 	run, err := cb.resourceManager.GetRun(runID)
@@ -118,24 +130,30 @@ func (cb *ContextBuilder) gatherRunContext(runID string) string {
 		return fmt.Sprintf("The user is viewing run %s.", runID)
 	}
 
-	ctx := fmt.Sprintf("The user is viewing run details:\n- Run ID: %s\n- Name: %s\n- State: %s",
+	result := fmt.Sprintf("The user is viewing run details:\n- Run ID: %s\n- Name: %s\n- State: %s",
 		run.UUID, run.DisplayName, run.State.ToString())
 
 	if run.State.ToString() == "FAILED" {
-		ctx += "\n- **This run has FAILED.** The user may want help debugging the failure."
+		result += "\n- **This run has FAILED.** The user may want help debugging the failure."
 		// Add state history for failure analysis
 		if len(run.StateHistory) > 0 {
 			detailsJSON, _ := json.Marshal(run.StateHistory)
-			ctx += fmt.Sprintf("\n- State History: %s", string(detailsJSON))
+			result += fmt.Sprintf("\n- State History: %s", string(detailsJSON))
 		}
 	}
 
-	return ctx
+	return result
 }
 
-func (cb *ContextBuilder) gatherPipelineContext(pipelineID string) string {
+func (cb *ContextBuilder) gatherPipelineContext(ctx context.Context, pipelineID string) string {
 	if pipelineID == "" {
 		return "The user is viewing pipeline details but no pipeline ID is available."
+	}
+
+	// RBAC check: verify the user has read access to this pipeline before fetching.
+	if err := cb.checkPipelineAccess(ctx, pipelineID); err != nil {
+		glog.Warningf("Pipeline context access denied for %s: %v", pipelineID, err)
+		return fmt.Sprintf("The user is viewing pipeline %s.", pipelineID)
 	}
 
 	pipeline, err := cb.resourceManager.GetPipeline(pipelineID)
@@ -146,6 +164,52 @@ func (cb *ContextBuilder) gatherPipelineContext(pipelineID string) string {
 
 	return fmt.Sprintf("The user is viewing pipeline details:\n- Pipeline ID: %s\n- Name: %s\n- Description: %s",
 		pipeline.UUID, pipeline.Name, pipeline.Description)
+}
+
+// checkRunAccess verifies the user has read access to the given run.
+// In single-user mode this is a no-op.
+func (cb *ContextBuilder) checkRunAccess(ctx context.Context, runID string) error {
+	if !common.IsMultiUserMode() || cb.resourceManager == nil {
+		return nil
+	}
+	run, err := cb.resourceManager.GetRun(runID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve run for authorization: %w", err)
+	}
+	namespace := run.Namespace
+	if cb.resourceManager.IsEmptyNamespace(namespace) {
+		experiment, err := cb.resourceManager.GetExperiment(run.ExperimentId)
+		if err != nil {
+			return fmt.Errorf("failed to resolve experiment namespace: %w", err)
+		}
+		namespace = experiment.Namespace
+	}
+	return cb.resourceManager.IsAuthorized(ctx, &authorizationv1.ResourceAttributes{
+		Namespace: namespace,
+		Verb:      common.RbacResourceVerbGet,
+		Group:     common.RbacPipelinesGroup,
+		Version:   common.RbacPipelinesVersion,
+		Resource:  common.RbacResourceTypeRuns,
+	})
+}
+
+// checkPipelineAccess verifies the user has read access to the given pipeline.
+// In single-user mode this is a no-op.
+func (cb *ContextBuilder) checkPipelineAccess(ctx context.Context, pipelineID string) error {
+	if !common.IsMultiUserMode() || cb.resourceManager == nil {
+		return nil
+	}
+	pipeline, err := cb.resourceManager.GetPipeline(pipelineID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve pipeline for authorization: %w", err)
+	}
+	return cb.resourceManager.IsAuthorized(ctx, &authorizationv1.ResourceAttributes{
+		Namespace: pipeline.Namespace,
+		Verb:      common.RbacResourceVerbGet,
+		Group:     common.RbacPipelinesGroup,
+		Version:   common.RbacPipelinesVersion,
+		Resource:  common.RbacResourceTypePipelines,
+	})
 }
 
 func (cb *ContextBuilder) gatherRunListContext(namespace, experimentID string) string {

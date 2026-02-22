@@ -100,7 +100,7 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 	})
 
 	rulesContent := s.ruleManager.GetActiveRulesContent()
-	systemPrompt := s.contextBuilder.BuildSystemPrompt(req.PageContext, rulesContent)
+	systemPrompt := s.contextBuilder.BuildSystemPrompt(ctx, req.PageContext, rulesContent)
 
 	if err := s.sessionManager.AddMessage(sess.ID, provider.Message{
 		Role:    "user",

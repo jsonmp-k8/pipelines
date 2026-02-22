@@ -87,11 +87,18 @@ func (t *CreateRunTool) Execute(ctx context.Context, args map[string]interface{}
 		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
 
+	// Validate experiment/namespace pairing, matching the standard RunService flow.
+	// This ensures the experiment exists and belongs to the specified namespace.
+	validatedExperimentID, validatedNamespace, err := t.resourceManager.GetValidExperimentNamespacePair(experimentID, namespace)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Invalid experiment/namespace combination: %v", err), IsError: true}, nil
+	}
+
 	run := &model.Run{
 		DisplayName:  name,
 		Description:  description,
-		ExperimentId: experimentID,
-		Namespace:    namespace,
+		ExperimentId: validatedExperimentID,
+		Namespace:    validatedNamespace,
 		PipelineSpec: model.PipelineSpec{
 			PipelineVersionId: pipelineVersionID,
 		},

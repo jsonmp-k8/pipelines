@@ -26,6 +26,9 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/gorilla/mux"
+	authorizationv1 "k8s.io/api/authorization/v1"
+
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
 	"github.com/kubeflow/pipelines/backend/src/apiserver/common"
 )
@@ -292,9 +295,29 @@ func NewGenerateDocsHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		// Authorize access to the pipeline before fetching any data.
+		rm := aiServer.contextBuilder.GetResourceManager()
+		if common.IsMultiUserMode() && rm != nil {
+			pipeline, err := rm.GetPipeline(pipelineID)
+			if err != nil {
+				http.Error(w, "Pipeline not found", http.StatusNotFound)
+				return
+			}
+			if err := rm.IsAuthorized(ctx, &authorizationv1.ResourceAttributes{
+				Namespace: pipeline.Namespace,
+				Verb:      common.RbacResourceVerbGet,
+				Group:     common.RbacPipelinesGroup,
+				Version:   common.RbacPipelinesVersion,
+				Resource:  common.RbacResourceTypePipelines,
+			}); err != nil {
+				http.Error(w, "Unauthorized: you do not have access to this pipeline", http.StatusForbidden)
+				return
+			}
+		}
+
 		specContext := ""
 		// Try to get pipeline metadata
-		if pipeline, err := aiServer.contextBuilder.GetResourceManager().GetPipeline(pipelineID); err == nil {
+		if pipeline, err := rm.GetPipeline(pipelineID); err == nil {
 			specContext += fmt.Sprintf("Pipeline Name: %s\nDescription: %s\nNamespace: %s\n\n",
 				pipeline.Name, pipeline.Description, pipeline.Namespace)
 		}
@@ -302,11 +325,11 @@ func NewGenerateDocsHandler(aiServer *AIServer) http.HandlerFunc {
 		// Try to get the actual pipeline spec/template
 		versionID := req.PipelineVersionID
 		if versionID != "" {
-			if templateBytes, err := aiServer.contextBuilder.GetResourceManager().GetPipelineVersionTemplate(versionID); err == nil {
+			if templateBytes, err := rm.GetPipelineVersionTemplate(versionID); err == nil {
 				specContext += fmt.Sprintf("Pipeline Spec (version %s):\n```json\n%s\n```\n", versionID, string(templateBytes))
 			}
 		} else {
-			if templateBytes, err := aiServer.contextBuilder.GetResourceManager().GetPipelineLatestTemplate(pipelineID); err == nil {
+			if templateBytes, err := rm.GetPipelineLatestTemplate(pipelineID); err == nil {
 				specContext += fmt.Sprintf("Pipeline Spec (latest version):\n```json\n%s\n```\n", string(templateBytes))
 			}
 		}
@@ -386,16 +409,23 @@ func NewToggleRuleHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
+		// Extract rule_id from path parameter (source of truth).
+		vars := mux.Vars(r)
+		ruleID := vars["rule_id"]
+		if ruleID == "" {
+			http.Error(w, "rule_id path parameter is required", http.StatusBadRequest)
+			return
+		}
+
 		var req struct {
-			RuleID  string `json:"rule_id"`
-			Enabled bool   `json:"enabled"`
+			Enabled bool `json:"enabled"`
 		}
 		if err := json.Unmarshal(body, &req); err != nil {
 			http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		rule, err := aiServer.ToggleRule(req.RuleID, req.Enabled)
+		rule, err := aiServer.ToggleRule(ruleID, req.Enabled)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to toggle rule: %v", err), http.StatusBadRequest)
 			return
