@@ -72,6 +72,13 @@ func (rl *rateLimiter) allow(key string) bool {
 	}
 	entries = entries[start:]
 
+	// Clean up empty entries to prevent unbounded map growth
+	if len(entries) == 0 {
+		delete(rl.requests, key)
+		rl.requests[key] = []time.Time{now}
+		return true
+	}
+
 	if len(entries) >= rateLimitMaxRequests {
 		rl.requests[key] = entries
 		return false
@@ -146,8 +153,10 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 			return
 		}
 
-		// Generate session ID if not provided
-		if req.SessionID == "" {
+		// In multi-user mode, always generate a server-side session ID to prevent
+		// session fixation attacks. In single-user mode, accept client-provided IDs
+		// for continuity.
+		if common.IsMultiUserMode() || req.SessionID == "" {
 			req.SessionID = generateSessionID()
 		}
 
@@ -187,9 +196,10 @@ func NewSSEHandler(aiServer *AIServer) http.HandlerFunc {
 					"retryable": false,
 				},
 			}
-			data, _ := json.Marshal(errEvent)
-			fmt.Fprintf(w, "data: %s\n\n", string(data))
-			flusher.Flush()
+			if data, marshalErr := json.Marshal(errEvent); marshalErr == nil {
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
+			}
 		}
 
 		// Send done event
@@ -297,7 +307,12 @@ func NewGenerateDocsHandler(aiServer *AIServer) http.HandlerFunc {
 
 		// Authorize access to the pipeline before fetching any data.
 		rm := aiServer.contextBuilder.GetResourceManager()
-		if common.IsMultiUserMode() && rm != nil {
+		if rm == nil {
+			http.Error(w, "AI service is not properly configured", http.StatusInternalServerError)
+			return
+		}
+
+		if common.IsMultiUserMode() {
 			pipeline, err := rm.GetPipeline(pipelineID)
 			if err != nil {
 				http.Error(w, "Pipeline not found", http.StatusNotFound)

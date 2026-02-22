@@ -69,6 +69,11 @@ func (t *CreateExperimentTool) Execute(ctx context.Context, args map[string]inte
 		return &tools.ToolResult{Content: "name is required", IsError: true}, nil
 	}
 
+	// In multi-user mode, namespace is required to scope the experiment.
+	if common.IsMultiUserMode() && namespace == "" {
+		return &tools.ToolResult{Content: "namespace is required in multi-user mode", IsError: true}, nil
+	}
+
 	if err := checkAccess(ctx, t.resourceManager, namespace, common.RbacResourceVerbCreate, common.RbacResourceTypeExperiments); err != nil {
 		return &tools.ToolResult{Content: fmt.Sprintf("Authorization failed: %v", err), IsError: true}, nil
 	}
@@ -89,6 +94,9 @@ func (t *CreateExperimentTool) Execute(ctx context.Context, args map[string]inte
 		"name":      created.Name,
 		"namespace": created.Namespace,
 	}
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }

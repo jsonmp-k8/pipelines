@@ -108,9 +108,12 @@ func (t *ListExperimentsTool) Execute(ctx context.Context, args map[string]inter
 		})
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]interface{}{
 		"total_count":  totalSize,
 		"experiments":  results,
 	})
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }

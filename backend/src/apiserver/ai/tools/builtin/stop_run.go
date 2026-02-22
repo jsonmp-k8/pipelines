@@ -70,6 +70,9 @@ func (t *StopRunTool) Execute(ctx context.Context, args map[string]interface{}) 
 		"run_id":  runID,
 		"message": "Run terminated successfully",
 	}
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }

@@ -80,6 +80,9 @@ func (t *GetRunTool) Execute(ctx context.Context, args map[string]interface{}) (
 		"finished_at":     run.FinishedAtInSec,
 		"run_details":     run.RunDetails,
 	}
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }

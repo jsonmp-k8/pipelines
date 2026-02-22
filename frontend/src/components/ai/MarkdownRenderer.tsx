@@ -102,6 +102,9 @@ interface MarkdownRendererProps {
 
 const markdownOptions = {
   forceBlock: true,
+  // Prevent XSS by disabling raw HTML parsing in markdown content.
+  // Only parsed markdown elements will be rendered as React components.
+  disableParsingRawHTML: true,
   overrides: {
     a: {
       props: {
@@ -109,6 +112,11 @@ const markdownOptions = {
         rel: 'noopener noreferrer',
       },
     },
+    // Prevent script/iframe/object tags from being rendered even as overrides
+    script: { component: () => null },
+    iframe: { component: () => null },
+    object: { component: () => null },
+    embed: { component: () => null },
   },
 };
 

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	aicontext "github.com/kubeflow/pipelines/backend/src/apiserver/ai/context"
@@ -28,7 +29,13 @@ import (
 	"github.com/kubeflow/pipelines/backend/src/apiserver/ai/tools"
 )
 
-const maxAgenticLoopIterations = 20
+const (
+	maxAgenticLoopIterations = 20
+
+	// confirmationTimeout is the maximum time to wait for a user to approve/deny
+	// a mutating tool call before timing out. This prevents goroutine leaks.
+	confirmationTimeout = 10 * time.Minute
+)
 
 // ChatRequest represents an incoming chat request.
 type ChatRequest struct {
@@ -193,7 +200,10 @@ func (s *AIServer) StreamChat(ctx context.Context, req *ChatRequest, sendEvent f
 					}
 					currentToolCall.Input = input
 
-					argsJSON, _ := json.Marshal(input)
+					argsJSON, err := json.Marshal(input)
+					if err != nil {
+						argsJSON = []byte("{}")
+					}
 					sendEvent(ChatResponseEvent{
 						Type: "tool_call",
 						Data: map[string]interface{}{
@@ -311,7 +321,10 @@ func (s *AIServer) executeToolCall(
 
 	// Check if confirmation is needed
 	if securedTool.NeedsConfirmation(mode) {
-		argsJSON, _ := json.Marshal(tc.Input)
+		argsJSON, err := json.Marshal(tc.Input)
+		if err != nil {
+			argsJSON = []byte("{}")
+		}
 
 		// Send confirmation request
 		sendEvent(ChatResponseEvent{
@@ -338,7 +351,8 @@ func (s *AIServer) executeToolCall(
 			return nil, fmt.Errorf("failed to add pending confirmation: %w", err)
 		}
 
-		// Block until user responds or context is cancelled
+		// Block until user responds, context is cancelled, or timeout expires.
+		// The timeout prevents goroutine leaks if the user never responds.
 		select {
 		case decision := <-pending.ResultCh:
 			if !decision.Approved {
@@ -349,6 +363,11 @@ func (s *AIServer) executeToolCall(
 			}
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-time.After(confirmationTimeout):
+			return &tools.ToolResult{
+				Content: fmt.Sprintf("Tool call %s timed out waiting for user confirmation.", tc.Name),
+				IsError: true,
+			}, nil
 		}
 	}
 

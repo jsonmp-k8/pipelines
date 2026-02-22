@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -85,13 +86,39 @@ func validateMCPServerURL(rawURL string) error {
 	if host == "" {
 		return fmt.Errorf("empty hostname")
 	}
-	// Block common internal/loopback addresses
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-		host == "0.0.0.0" || strings.HasPrefix(host, "169.254.") ||
-		host == "metadata.google.internal" {
-		return fmt.Errorf("connecting to %s is not allowed", host)
+
+	// Block well-known internal hostnames
+	blockedHosts := []string{
+		"localhost",
+		"metadata.google.internal",
+		"metadata.google",
+		"kubernetes.default",
+		"kubernetes.default.svc",
+	}
+	for _, blocked := range blockedHosts {
+		if host == blocked {
+			return fmt.Errorf("connecting to %s is not allowed", host)
+		}
+	}
+
+	// Resolve hostname to IP addresses and check each one
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve hostname %s: %w", host, err)
+	}
+	for _, ip := range ips {
+		if isPrivateOrReservedIP(ip) {
+			return fmt.Errorf("connecting to %s (%s) is not allowed: resolves to private/reserved IP", host, ip)
+		}
 	}
 	return nil
+}
+
+// isPrivateOrReservedIP checks if an IP address is private, loopback, link-local, or otherwise reserved.
+func isPrivateOrReservedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() ||
+		ip.IsMulticast() || ip.Equal(net.IPv4bcast)
 }
 
 // MCPManager manages lifecycle of MCP client/server connections.

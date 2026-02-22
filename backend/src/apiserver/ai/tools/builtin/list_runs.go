@@ -114,7 +114,10 @@ func (t *ListRunsTool) Execute(ctx context.Context, args map[string]interface{})
 		"total_count": totalSize,
 		"runs":        formatRuns(runs),
 	}
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }
 

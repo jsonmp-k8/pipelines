@@ -69,10 +69,13 @@ func (t *GetPipelineSpecTool) Execute(ctx context.Context, args map[string]inter
 	// Try to parse as JSON for clean output
 	var specJSON interface{}
 	if err := json.Unmarshal(templateBytes, &specJSON); err == nil {
-		data, _ := json.Marshal(map[string]interface{}{
+		data, marshalErr := json.Marshal(map[string]interface{}{
 			"pipeline_id": pipelineID,
 			"spec":        specJSON,
 		})
+		if marshalErr != nil {
+			return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", marshalErr), IsError: true}, nil
+		}
 		return &tools.ToolResult{Content: string(data)}, nil
 	}
 

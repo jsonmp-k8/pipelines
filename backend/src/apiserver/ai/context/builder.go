@@ -137,7 +137,10 @@ func (cb *ContextBuilder) gatherRunContext(ctx context.Context, runID string) st
 		result += "\n- **This run has FAILED.** The user may want help debugging the failure."
 		// Add state history for failure analysis
 		if len(run.StateHistory) > 0 {
-			detailsJSON, _ := json.Marshal(run.StateHistory)
+			detailsJSON, err := json.Marshal(run.StateHistory)
+		if err != nil {
+			detailsJSON = []byte("[]")
+		}
 			result += fmt.Sprintf("\n- State History: %s", string(detailsJSON))
 		}
 	}

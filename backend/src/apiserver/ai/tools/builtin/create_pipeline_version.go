@@ -89,6 +89,9 @@ func (t *CreatePipelineVersionTool) Execute(ctx context.Context, args map[string
 		"name":        created.Name,
 		"pipeline_id": created.PipelineId,
 	}
-	data, _ := json.Marshal(result)
+	data, err := json.Marshal(result)
+	if err != nil {
+		return &tools.ToolResult{Content: fmt.Sprintf("Failed to marshal result: %v", err), IsError: true}, nil
+	}
 	return &tools.ToolResult{Content: string(data)}, nil
 }
