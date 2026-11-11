@@ -783,6 +783,36 @@ class DependabotConfigTest(unittest.TestCase):
             )
         )
 
+    def test_gh_aw_runtime_actions_are_only_updated_by_recompiling(self):
+        # The setup action must match the lockfile's compiler_version, so
+        # a solo bump breaks every analyzer run (#15162, #15222).
+        lockfile = (
+            REPOSITORY_ROOT / '.github/workflows/ai-analyzer.lock.yml'
+        ).read_text(encoding='utf-8')
+        gh_aw_actions = set(
+            re.findall(r'uses: (github/gh-aw-actions/[^@\s]+)@', lockfile)
+        )
+        self.assertTrue(gh_aw_actions)
+        jobs = [
+            update
+            for update in yaml.safe_load(self.config)['updates']
+            if update['package-ecosystem'] == 'github-actions'
+        ]
+        self.assertEqual(len(jobs), 2)
+        for job in jobs:
+            ignored = [
+                rule['dependency-name']
+                for rule in job.get('ignore', [])
+                if set(rule) == {'dependency-name'}
+            ]
+            for action in gh_aw_actions:
+                with self.subTest(
+                    target=job.get('target-branch', 'master'), action=action
+                ):
+                    self.assertTrue(
+                        any(fnmatchcase(action, name) for name in ignored)
+                    )
+
     def test_pre_commit_configuration_is_covered(self):
         self.assertTrue((REPOSITORY_ROOT / '.pre-commit-config.yaml').is_file())
         self.assertEqual(self.configured_directories('pre-commit'), {'/'})
